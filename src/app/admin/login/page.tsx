@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { getSession } from '@/lib/session';
 import { Logo } from '@/components/Logo';
-import { siteName } from '@/config/brand';
+import { siteName, tagline } from '@/config/brand';
 import { AdminLoginForm } from './LoginForm';
 
 // Server component. If the visitor is already signed in, skip the
@@ -30,6 +30,12 @@ export default async function AdminLoginPage() {
             <Logo size={18} className="text-ink shrink-0" />
             <span className="font-display text-[15px] leading-none tracking-tightish text-ink truncate">
               {siteName}
+            </span>
+            <span
+              className="hidden min-[900px]:inline-block font-mono text-[10.5px] tracking-widerish text-inkMuted whitespace-nowrap"
+              title={tagline}
+            >
+              — {tagline}
             </span>
             <span className="hidden sm:inline-block w-3 h-px bg-ink/20" aria-hidden />
             <span className="catalogue text-vermilion dark:text-vermilionBright">— Administrator</span>

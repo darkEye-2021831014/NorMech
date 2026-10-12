@@ -7,15 +7,15 @@
   <line x1="40" y1="530" x2="1160" y2="530" stroke="#1a1a1a" stroke-width="1" opacity="0.25"/>
 
   <!-- top catalogue row -->
-  <text x="80" y="78" font-family="ui-monospace, monospace" font-size="14" letter-spacing="2" fill="#1a1a1a" opacity="0.7">Marginalia</text>
-  <text x="1120" y="78" text-anchor="end" font-family="ui-monospace, monospace" font-size="14" letter-spacing="2" fill="#1a1a1a" opacity="0.7">Research annotation platform</text>
+  <text x="80" y="78" font-family="ui-monospace, monospace" font-size="14" letter-spacing="2" fill="#1a1a1a" opacity="0.7">NorMech</text>
+  <text x="1120" y="78" text-anchor="end" font-family="ui-monospace, monospace" font-size="14" letter-spacing="2" fill="#1a1a1a" opacity="0.7">Normalization Mechanism dataset annotation</text>
 
   <!-- main title block -->
   <text x="600" y="270" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="84" font-weight="600" fill="#1a1a1a">A reading room</text>
   <text x="600" y="370" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="84" font-style="italic" fill="#1a1a1a">for the <tspan fill="#b02b0f" font-style="normal" font-weight="600">picture</tspan> that travels.</text>
 
   <!-- subtitle -->
-  <text x="600" y="450" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="24" fill="#1a1a1a" opacity="0.7">Meme annotation study</text>
+  <text x="600" y="450" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="24" fill="#1a1a1a" opacity="0.7">NorMech annotation study</text>
 
   <!-- bottom row -->
   <text x="80" y="558" font-family="ui-monospace, monospace" font-size="13" letter-spacing="1.5" fill="#1a1a1a" opacity="0.6">close annotation · single observer</text>

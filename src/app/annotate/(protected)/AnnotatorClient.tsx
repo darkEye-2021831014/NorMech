@@ -36,7 +36,6 @@ import { cn } from '@/lib/utils';
 import type { HarmSource, ImageRow } from '@/lib/annotator-actions';
 
 interface Props {
-  datasetName: string;
   userName: string;
   datasetId: string;
   images: ImageRow[];
@@ -63,6 +62,12 @@ interface State {
   // The most-recent "you can't go further" cue, with a timestamp
   // so the UI knows when to clear it. `null` = no active cue.
   boundaryCue: { which: Boundary; at: number };
+  // Visible cursor on the choice grid. `null` = hidden (no Up/Down
+  // yet, and no existing label on the current image). When set, an
+  // accent ring is drawn around the option at this index WITHOUT
+  // selecting it; selecting is a separate action (Enter / Space /
+  // 1-4).
+  cursorIndex: number | null;
 }
 
 type Action =
@@ -73,13 +78,22 @@ type Action =
       type: 'goTo';
       target: number;
       total: number;
+      // Image id at the target index, used to seed the cursor
+      // when the navigation lands on a new image. Optional so
+      // the type is easy to construct in tests; missing image
+      // id → cursor stays hidden.
+      imageId?: string;
     }
   | { type: 'toggle_auto_advance' }
   | { type: 'image_loaded' }
   | { type: 'image_error' }
   | { type: 'image_retry' }
   | { type: 'clear_saved' }
-  | { type: 'clear_boundary_cue'; at: number };
+  | { type: 'clear_boundary_cue'; at: number }
+  // Cursor control. The reducer resolves the new index from
+  // `delta` (wrapping) or from a `target` (Home=-999, End=+999).
+  | { type: 'cursor_move'; delta: number; total: number }
+  | { type: 'cursor_reset_to'; index: number | null };
 
 const AUTO_ADVANCE_MS = 350;
 const BOUNDARY_CUE_MS = 900;
@@ -91,10 +105,21 @@ function clampIndex(i: number, total: number): number {
   return i;
 }
 
+// Lookup: harm source → its position in CHOICES (defined below).
+// Used to seed the cursor when an image has an existing label, and
+// to snap the cursor to the option the user just picked.
+const HARM_TO_CHOICE_INDEX: Record<HarmSource, number> = {
+  text: 0,
+  image: 1,
+  both: 2,
+  none: 3,
+};
+
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case 'select': {
       // Optimistic write.
+      const idx = HARM_TO_CHOICE_INDEX[action.harmSource];
       return {
         ...state,
         annotations: { ...state.annotations, [action.imageId]: action.harmSource },
@@ -102,6 +127,10 @@ function reducer(state: State, action: Action): State {
         lastError: null,
         pendingSave: { imageId: action.imageId, harmSource: action.harmSource },
         showSavedAt: 0,
+        // When the user marks, the cursor snaps to the option they
+        // just picked, so Enter on the same option is a no-op rather
+        // than a "moved then moved back" jump.
+        cursorIndex: idx,
       };
     }
     case 'save_ok': {
@@ -167,6 +196,16 @@ function reducer(state: State, action: Action): State {
         status: 'idle',
         lastError: null,
         boundaryCue: { which: null, at: 0 },
+        // Reset the cursor for the new image. If that image has an
+        // existing label, snap the cursor to it (so the user can
+        // press Enter to re-mark, or arrow to a different one). If
+        // not, hide the cursor until the user presses Up/Down.
+        cursorIndex: action.imageId
+          ? (() => {
+              const existing = state.annotations[action.imageId!];
+              return existing ? HARM_TO_CHOICE_INDEX[existing] : null;
+            })()
+          : null,
       };
     }
     case 'toggle_auto_advance':
@@ -198,11 +237,27 @@ function reducer(state: State, action: Action): State {
         return { ...state, boundaryCue: { which: null, at: 0 } };
       }
       return state;
+    case 'cursor_move': {
+      // Move the cursor by `delta` slots, wrapping. The reducer is
+      // the only place that knows how many options exist; the page
+      // passes `total` (currently always 4 = CHOICES.length).
+      const { delta, total } = action;
+      if (total <= 0) return state;
+      const cur = state.cursorIndex;
+      // First press: if hidden, show it on the first option.
+      if (cur === null) {
+        return { ...state, cursorIndex: 0 };
+      }
+      const wrapped = ((cur + delta) % total + total) % total;
+      if (wrapped === cur) return state;
+      return { ...state, cursorIndex: wrapped };
+    }
+    case 'cursor_reset_to':
+      return { ...state, cursorIndex: action.index };
   }
 }
 
 export function AnnotatorClient({
-  datasetName,
   userName,
   datasetId,
   images,
@@ -211,20 +266,30 @@ export function AnnotatorClient({
 }: Props) {
   const reduce = useReducedMotion();
 
-  const [state, dispatch] = useReducer(reducer, {
-    annotations: initialAnnotations,
-    currentIndex: clampIndex(startIndex, images.length),
-    status: 'idle',
-    lastError: null,
-    pendingSave: null,
-    autoAdvance: true,
-    showSavedAt: 0,
-    imageErrorKey: 0,
-    imageError: false,
-    imageStrikeCount: 0,
-    imageReported: false,
-    boundaryCue: { which: null, at: 0 },
-  });
+  const [state, dispatch] = useReducer(reducer, (() => {
+    // Lazy init: the cursor starts on the first image's existing
+    // label (if any), or hidden. We compute this here so the very
+    // first render already has the right cursor state — no flash of
+    // a hidden cursor on a previously-annotated image.
+    const idx = clampIndex(startIndex, images.length);
+    const img = images[idx];
+    const existing = img ? initialAnnotations[img.id] : undefined;
+    return {
+      annotations: initialAnnotations,
+      currentIndex: idx,
+      status: 'idle' as const,
+      lastError: null,
+      pendingSave: null,
+      autoAdvance: true,
+      showSavedAt: 0,
+      imageErrorKey: 0,
+      imageError: false,
+      imageStrikeCount: 0,
+      imageReported: false,
+      boundaryCue: { which: null, at: 0 },
+      cursorIndex: existing ? HARM_TO_CHOICE_INDEX[existing] : null,
+    };
+  })());
 
   // Show the "How to annotate" modal on first visit, and on demand.
   // `initiallyOpen` is computed on mount from localStorage; bumping
@@ -251,7 +316,7 @@ export function AnnotatorClient({
   const [furthestViewedIndex, setFurthestViewedIndex] = useState(0);
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(`marginalia-annotator-furthest:${datasetId}`);
+      const raw = localStorage.getItem(`normech-annotator-furthest:${datasetId}`);
       const n = raw == null ? 0 : parseInt(raw, 10);
       if (Number.isFinite(n) && n >= 0) {
         setFurthestViewedIndex(Math.min(n, Math.max(0, images.length - 1)));
@@ -268,7 +333,7 @@ export function AnnotatorClient({
       const next = Math.max(prev, state.currentIndex);
       if (next === prev) return prev;
       try {
-        localStorage.setItem(`marginalia-annotator-furthest:${datasetId}`, String(next));
+        localStorage.setItem(`normech-annotator-furthest:${datasetId}`, String(next));
       } catch {
         /* ignore */
       }
@@ -330,9 +395,11 @@ export function AnnotatorClient({
   // go past an edge so the UI can nudge.
   const goTo = useCallback(
     (target: number) => {
-      dispatch({ type: 'goTo', target, total: images.length });
+      const clamped = clampIndex(target, images.length);
+      const imageId = images[clamped]?.id;
+      dispatch({ type: 'goTo', target, total: images.length, imageId });
     },
-    [images.length]
+    [images]
   );
 
   // Auto-clear the boundary cue after BOUNDARY_CUE_MS.
@@ -414,39 +481,131 @@ export function AnnotatorClient({
       // Route through goTo so clamping/auditing is consistent.
       // (We use the raw dispatch here because we have a ref, but
       // it's the SAME shape goTo uses.)
-      dispatch({ type: 'goTo', target: ref.currentIndex + 1, total: images.length });
+      const nextIdx = ref.currentIndex + 1;
+      const imageId = images[nextIdx]?.id;
+      dispatch({ type: 'goTo', target: nextIdx, total: images.length, imageId });
     }, AUTO_ADVANCE_MS);
     return () => clearTimeout(t);
-  }, [state.status, state.autoAdvance, state.annotations, state.currentIndex, currentImage, images.length, lastIndex]);
+  }, [state.status, state.autoAdvance, state.annotations, state.currentIndex, currentImage, images, images.length, lastIndex]);
 
   // ---------------------------------------------------------------------
-  // Keyboard shortcuts. ArrowLeft/J and ArrowRight/K route through
-  // goTo so they clamp at the boundaries; the reducer sets
-  // boundaryCue which the UI uses to nudge.
+  // Keyboard shortcuts.
+  //
+  //   ← / →  (and j / k): previous / next image. Never change the
+  //                        selected option. clamp at the edges via
+  //                        goTo.
+  //   ↑ / ↓             : move a visible "cursor" highlight between
+  //                        Text / Image / Both / None. Wrapping.
+  //                        Does NOT save and does NOT auto-advance.
+  //                        If the cursor is hidden, the first press
+  //                        shows it on the first option.
+  //   Enter / Space     : when the cursor is visible, mark the option
+  //                        under the cursor (saves; auto-advance
+  //                        rules apply). When the cursor is hidden,
+  //                        no-op (the user is asked to pick a label
+  //                        first so we never silently mark "text"
+  //                        by accident).
+  //   1 - 4             : mark the current image directly.
+  //
+  // When focus is on a text input, textarea, or contenteditable, we
+  // bail. The ChoiceGrid's own onKeyDown handles ↑ / ↓ when a radio
+  // is focused, so the page handler only sees those keys when focus
+  // is elsewhere (and we re-broadcast the same ↑/↓ action so the
+  // cursor moves regardless of where focus lives).
   // ---------------------------------------------------------------------
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
-        return;
-      }
-      // Don't double-handle arrows when a radio button has focus —
-      // ChoiceGrid's keydown already moved/selected.
-      if (target && target.getAttribute('role') === 'radio') {
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
         return;
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
+      // ChoiceGrid handles its own radio focus. Skip the page-level
+      // 1-4 / Enter / Space / ↑ / ↓ handling when a radio is focused
+      // so we don't double-dispatch.
+      const onRadio =
+        !!target && target.getAttribute('role') === 'radio';
+
       const key = e.key.toLowerCase();
-      if (key === '1') return onSelect('text');
-      if (key === '2') return onSelect('image');
-      if (key === '3') return onSelect('both');
-      if (key === '4') return onSelect('none');
+      // Direct marking keys — always work, anywhere on the page.
+      // On a radio, the focused element's own click is what fires
+      // (via Enter/Space), so we let those through naturally. The
+      // numeric keys still need preventDefault to avoid scrolling.
+      if (key === '1') {
+        e.preventDefault();
+        return onSelect('text');
+      }
+      if (key === '2') {
+        e.preventDefault();
+        return onSelect('image');
+      }
+      if (key === '3') {
+        e.preventDefault();
+        return onSelect('both');
+      }
+      if (key === '4') {
+        e.preventDefault();
+        return onSelect('none');
+      }
+      // Image navigation. ChoiceGrid's onKeyDown `preventDefault`s
+      // ←/→ on a radio so the radiogroup doesn't move focus; the
+      // page handler still runs (it's a different listener) and
+      // navigates to the previous/next image.
       if (e.key === 'ArrowLeft' || key === 'j') {
+        e.preventDefault();
         return goTo(stateRef.current.currentIndex - 1);
       }
       if (e.key === 'ArrowRight' || key === 'k') {
+        e.preventDefault();
         return goTo(stateRef.current.currentIndex + 1);
+      }
+      // Cursor movement. When a radio is focused, ChoiceGrid's own
+      // onKeyDown already called onCursorMove; the reducer is
+      // idempotent so this re-dispatch is harmless but wasted, so
+      // we suppress the page-level dispatch on a radio.
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (!onRadio) {
+          dispatch({ type: 'cursor_move', delta: -1, total: CHOICES.length });
+        }
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (!onRadio) {
+          dispatch({ type: 'cursor_move', delta: +1, total: CHOICES.length });
+        }
+        return;
+      }
+      // Enter / Space — mark the option under the cursor. On a
+      // radio, the focused element's own click (synthetic on
+      // keyup) will mark the right option, so the page handler
+      // is a no-op there. Off a radio (body, progress map tile,
+      // image), the radio click doesn't fire, so we mark from
+      // here.
+      if (e.key === 'Enter') {
+        if (onRadio) return;
+        const cur = stateRef.current.cursorIndex;
+        if (cur != null) {
+          e.preventDefault();
+          return onSelect(CHOICES[cur].harm);
+        }
+        return;
+      }
+      if (e.key === ' ' || e.key === 'Spacebar') {
+        if (onRadio) return;
+        const cur = stateRef.current.cursorIndex;
+        if (cur != null) {
+          e.preventDefault();
+          return onSelect(CHOICES[cur].harm);
+        }
+        return;
       }
     };
     window.addEventListener('keydown', onKey);
@@ -484,13 +643,16 @@ export function AnnotatorClient({
 
   // ---------------------------------------------------------------------
   // Completion / empty
+  //
+  // Empty datasets render their own page-level "no images yet" view.
+  // Completed datasets (every image marked) do NOT replace the
+  // annotator with a full-screen completion view — the user must
+  // still be able to review and change any answer. Instead, the
+  // normal annotator UI renders and a slim `CompletionBanner` shows
+  // at the top of the right panel.
   // ---------------------------------------------------------------------
   if (images.length === 0) {
     return <EmptyDataset />;
-  }
-
-  if (isComplete) {
-    return <CompletionScreen datasetName={datasetName} userName={userName} />;
   }
 
   return (
@@ -630,13 +792,29 @@ export function AnnotatorClient({
           header. min-h-0 on a flex item is what unlocks
           overflow-y-auto inside it. */}
       <aside className="flex flex-col gap-2 shrink-0 w-full lg:w-[340px] lg:h-full lg:min-h-0 lg:overflow-y-auto pt-2 lg:pt-1">
+        {/* Completion banner. Shown only when every image is marked.
+            Non-modal: it doesn't block the choices, the progress
+            map, or the navigation. The user can keep reviewing and
+            editing; the banner just provides the primary
+            "Download my CSV" affordance. */}
+        {isComplete && (
+          <CompletionBanner
+            annotatedCount={annotatedCount}
+            userName={userName}
+          />
+        )}
+
         {/* Choice buttons — panel variant: vertical stack on lg+,
             2x2 grid on mobile, description hidden on mobile so the
             four cards fit. */}
         <ChoiceGrid
           variant="panel"
           current={currentImage ? state.annotations[currentImage.id] : undefined}
+          cursorIndex={state.cursorIndex}
           onSelect={onSelect}
+          onCursorMove={(delta) =>
+            dispatch({ type: 'cursor_move', delta, total: CHOICES.length })
+          }
           reduceMotion={!!reduce}
         />
 
@@ -834,7 +1012,7 @@ export function AnnotatorClient({
         <div className="catalogue text-inkMuted flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 border-t border-ink/10 mt-1">
           <span className="flex items-center gap-1.5">
             <Keyboard size={11} strokeWidth={1.5} />
-            <span>1–4 to mark, ← / → to navigate, j / k also work (j back, k forward).</span>
+            <span>← / → previous / next image · ↑ / ↓ choose option · Enter confirm · 1-4 mark directly.</span>
           </span>
           <button
             type="button"
@@ -1124,12 +1302,23 @@ const CHOICES: {
 
 function ChoiceGrid({
   current,
+  cursorIndex,
   onSelect,
+  onCursorMove,
   reduceMotion,
   variant = 'grid',
 }: {
   current: HarmSource | undefined;
+  /**
+   * The visible "cursor" position. `null` means the cursor is hidden
+   * (no Up/Down has been pressed yet, and the current image has no
+   * existing label). When set, an accent ring is drawn around the
+   * matching option WITHOUT changing the fill — selecting is a
+   * separate action (Enter/Space, or keys 1-4).
+   */
+  cursorIndex: number | null;
   onSelect: (h: HarmSource) => void;
+  onCursorMove: (delta: number) => void;
   reduceMotion: boolean;
   /**
    * 'grid' (default): the original 2-col on mobile / 4-col on lg layout
@@ -1140,8 +1329,17 @@ function ChoiceGrid({
    */
   variant?: 'grid' | 'panel';
 }) {
-  // WAI-ARIA radiogroup: ←/→/↑/↓ move between radios, Home/End jump to
-  // first/last. Space/Enter activates (handled by the button).
+  // Keyboard semantics. Native radiogroup arrow keys would change
+  // the selection; we override that so:
+  //   ←/→  → navigate to the previous/next image (do NOT change the
+  //          selection; let the page-level handler do the navigation).
+  //   ↑/↓  → move the visible "cursor" highlight through the four
+  //          options, wrapping. Does NOT save or auto-advance.
+  //   Home/End → jump the cursor to the first/last option (no save).
+  //   Enter/Space → handled by the page-level handler (marks the
+  //          option under the cursor).
+  // We `preventDefault()` for ←/→ so the browser doesn't also act
+  // on the underlying radio semantics.
   const onKeyDown = (e: import('react').KeyboardEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
     if (target.getAttribute('role') !== 'radio') return;
@@ -1151,29 +1349,37 @@ function ChoiceGrid({
     const idx = buttons.indexOf(target as HTMLButtonElement);
     if (idx < 0) return;
 
-    const move = (newIdx: number) => {
-      e.preventDefault();
-      const wrapped = (newIdx + buttons.length) % buttons.length;
-      const next = buttons[wrapped];
-      next.focus();
-      onSelect(CHOICES[wrapped].harm);
-    };
-
     switch (e.key) {
-      case 'ArrowRight':
-      case 'ArrowDown':
-        move(idx + 1);
-        break;
       case 'ArrowLeft':
+        // ←/→ are reserved for image navigation. The page-level
+        // handler will move to the previous image. Swallow the key
+        // here so the radiogroup doesn't move focus to the previous
+        // radio AND so the browser doesn't toggle a radio.
+        e.preventDefault();
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        break;
       case 'ArrowUp':
-        move(idx - 1);
+        e.preventDefault();
+        onCursorMove(-1);
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        onCursorMove(+1);
         break;
       case 'Home':
-        move(0);
+        e.preventDefault();
+        onCursorMove(-999);
         break;
       case 'End':
-        move(buttons.length - 1);
+        e.preventDefault();
+        onCursorMove(+999);
         break;
+      // Enter / Space — fall through to the button's own click
+      // (we don't preventDefault). The page-level handler ALSO
+      // intercepts Enter/Space at the window level to mark the
+      // option under the cursor when a non-radio element has focus.
     }
   };
 
@@ -1193,13 +1399,16 @@ function ChoiceGrid({
       onKeyDown={onKeyDown}
       className={containerClass}
     >
-      {CHOICES.map((c) => {
+      {CHOICES.map((c, idx) => {
         const selected = current === c.harm;
+        const isCursor = cursorIndex === idx;
         return (
           <motion.button
             key={c.harm}
             role="radio"
             aria-checked={selected}
+            aria-current={isCursor ? 'true' : undefined}
+            data-cursor={isCursor ? 'true' : undefined}
             tabIndex={selected ? 0 : -1}
             onClick={() => onSelect(c.harm)}
             whileTap={reduceMotion ? undefined : { scale: 0.98, y: 1 }}
@@ -1228,7 +1437,17 @@ function ChoiceGrid({
                         ? 'bg-vermilion text-paperStrong border-vermilion'
                         : 'bg-olive dark:bg-oliveBright text-paperStrong border-olive dark:border-oliveBright'
                       : 'bg-cardBg text-ink border-ink/25 hover:border-ink'
-                  )
+                  ),
+              // Cursor ring: a 2px ring drawn OUTSIDE the card so the
+              // existing background / border / hover treatment is
+              // preserved. The ring uses the accent color (vermilion)
+              // so it reads against both unselected (paperStrong-ish
+              // bg) and selected (vermilion / olive) fills. Under
+              // reduced motion we still show the ring, but with no
+              // transition. We don't add a transition class so it
+              // appears instantly as the cursor moves.
+              isCursor &&
+                'ring-2 ring-vermilion ring-offset-2 ring-offset-cardBg'
             )}
           >
             {isPanel ? (
@@ -1403,49 +1622,51 @@ function EmptyDataset() {
   );
 }
 
-function CompletionScreen({
-  datasetName,
+/**
+ * Slim, non-modal banner that surfaces when every image has been
+ * marked. Renders at the top of the right panel; the rest of the
+ * annotator (image, choices, progress map, navigation) stays fully
+ * functional so the user can still review and change any answer.
+ */
+function CompletionBanner({
+  annotatedCount,
   userName,
 }: {
-  datasetName: string;
+  annotatedCount: number;
   userName: string;
 }) {
   const reduce = useReducedMotion();
   return (
-    <section className="max-w-[800px] mx-auto px-6 md:px-10 py-20 sm:py-28 text-center">
-      <motion.div
-        initial={reduce ? false : { opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.2, 0.7, 0.2, 1] }}
-      >
-        <p className="catalogue text-olive mb-3 flex items-center justify-center gap-2">
-          <span className="w-1.5 h-1.5 bg-olive rounded-full" aria-hidden />
-          The ledger is full
+    <motion.div
+      data-testid="completion-banner"
+      initial={reduce ? false : { opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, ease: [0.2, 0.7, 0.2, 1] }}
+      className="flex flex-col gap-2 border border-olive/60 bg-olive/[0.08] text-ink px-3 py-2.5 rounded-sm"
+      role="status"
+      aria-live="polite"
+    >
+      <p className="font-mono text-[11.5px] tracking-widerish text-olive dark:text-oliveBright flex items-center gap-1.5">
+        <span className="w-1.5 h-1.5 bg-olive dark:bg-oliveBright rounded-full" aria-hidden />
+        <span>
+          All{' '}
+          <span className="tabular-nums">{annotatedCount}</span> images
+          marked. Thank you, {userName}.
+        </span>
+      </p>
+      <div className="flex items-center gap-2 flex-wrap">
+        <a
+          href="/api/annotate/csv"
+          className="inline-flex items-center justify-center gap-2 h-9 px-3 text-[11px] font-mono uppercase tracking-widerish bg-ink text-paper border border-ink hover:bg-vermilion transition-colors rounded-sm"
+        >
+          <Download size={12} strokeWidth={1.5} />
+          Download my CSV
+        </a>
+        <p className="font-sans text-[12px] text-inkMuted">
+          You can still review and change any answer.
         </p>
-        <h1 className="font-display text-[40px] sm:text-[52px] leading-[1.02] tracking-tightest text-ink mb-4">
-          Every leaf in <span className="italic">{datasetName}</span>{' '}
-          has been marked.
-        </h1>
-        <p className="font-sans text-[15px] leading-[1.6] text-inkMuted mb-10 max-w-[48ch] mx-auto">
-          Thank you, {userName}. The work is recorded. You may now download
-          a copy of your marks, or close the page and return to the volume.
-        </p>
-
-        <div className="flex items-center justify-center gap-3">
-          <a
-            href="/api/annotate/csv"
-            className="inline-flex items-center justify-center gap-2 h-11 px-5 text-sm font-mono uppercase tracking-widerish bg-ink text-paper border border-ink hover:bg-vermilion transition-colors rounded-sm"
-          >
-            <Download size={14} strokeWidth={1.5} />
-            Download my CSV
-          </a>
-        </div>
-
-        <p className="mt-12 font-display italic text-[14px] text-inkMuted">
-          &ldquo;Nothing is ever really lost to us as long as we remember it.&rdquo;
-        </p>
-      </motion.div>
-    </section>
+      </div>
+    </motion.div>
   );
 }
 

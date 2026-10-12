@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: meme-annotator-web
+    container_name: normech-annotator-web
     ports:
       - "3000:3000"
     env_file:
@@ -31,7 +31,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: meme-annotator-web-prod
+    container_name: normech-annotator-web-prod
     ports:
       - "3001:3000"
     env_file:
@@ -58,7 +58,7 @@ services:
   # Test artifacts land in ./playwright-report and ./test-results.
   e2e:
     image: mcr.microsoft.com/playwright:v1.55.0-jammy
-    container_name: meme-annotator-e2e
+    container_name: normech-annotator-e2e
     depends_on:
       - web
     working_dir: /e2e

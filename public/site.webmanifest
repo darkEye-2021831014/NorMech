@@ -1,7 +1,7 @@
 {
-  "name": "Marginalia",
-  "short_name": "Marginalia",
-  "description": "Marginalia — a research annotation platform. Meme annotation study.",
+  "name": "NorMech",
+  "short_name": "NorMech",
+  "description": "NorMech — Normalization Mechanism dataset annotation. NorMech annotation study.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",

@@ -399,11 +399,11 @@ test.describe('Annotator boundary navigation (5 images)', () => {
       }
 
       // Jump to image 5 and mark it. After the click, the
-      // optimistic state has all 5 marked, so the page renders the
-      // completion screen and the radio is no longer in the DOM.
-      // We race the two possible outcomes: the radio becoming
-      // checked (in case the page hasn't yet switched to the
-      // completion view), or the completion headline appearing.
+      // optimistic state has all 5 marked. The new design does NOT
+      // swap the page for a full-screen completion view — the
+      // annotator stays fully functional (image, choices, progress
+      // map all still on screen) and a slim CompletionBanner
+      // appears at the top of the right panel.
       await nextBtn.click();
       await waitForFirstImage(page);
       await expect.poll(() => readCounter(page)).toMatch(/005\s*\/\s*5/);
@@ -416,13 +416,32 @@ test.describe('Annotator boundary navigation (5 images)', () => {
       await textRadio.click();
       await putResponse;
 
-      // Completion screen should be visible — counter "005 / 5"
-      // disappears, the headline "Every leaf" appears.
-      await expect(page.getByText(/Every leaf in/i)).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByRole('link', { name: /download my csv/i })).toBeVisible();
+      // Slim completion banner is visible at the top of the right
+      // panel, with the primary "Download my CSV" link.
+      await expect(page.locator('[data-testid="completion-banner"]')).toBeVisible({
+        timeout: 5_000,
+      });
+      await expect(
+        page
+          .locator('[data-testid="completion-banner"]')
+          .getByRole('link', { name: /download my csv/i })
+      ).toBeVisible();
       // The "still unmarked" prompt must NOT be visible (we're
       // complete, not partial).
       await expect(page.locator('[data-testid="still-unmarked-prompt"]')).toHaveCount(0);
+      // And — critically — the annotator UI is still on screen so
+      // the user can review and change any answer. The counter is
+      // still visible, the image is still visible, and the four
+      // choice radios are still present.
+      await expect(page.locator('[data-testid="current-counter"]')).toBeVisible();
+      await expect(textRadio).toBeChecked({ timeout: 5_000 });
+      // The "Image" radio (a different option than the one just
+      // picked) is also still present and clickable. We match the
+      // specific label so we don't also pick up the "Text" radio,
+      // whose description happens to contain the word "image".
+      const imageRadio = page.getByRole('radio', { name: /^\s*2\s+Image\b/ });
+      await expect(imageRadio).toBeVisible();
+      await expect(imageRadio).not.toBeChecked();
     } finally {
       await ctx.close();
     }

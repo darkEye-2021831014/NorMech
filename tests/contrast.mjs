@@ -66,9 +66,9 @@ function hex([r, g, b]) {
  */
 const PAIRS = [
   // Top-bar — small mono inkMuted on paper. This is the generic
-  // "small mono caption" used throughout the chrome (the old
-  // "M.A. — Vol. I" mark, replaced with "— Annotator" /
-  // "— Administrator", shares the same colours).
+  // "small mono caption" used throughout the chrome (the
+  // "— Annotator" / "— Administrator" captions share the same
+  // colours).
   ['Top-bar small mono caption', 'inkMuted', 'paper', 'normal'],
 
   // Landing page — headline.
@@ -129,8 +129,8 @@ const PAIRS = [
   ['Login h1 italic span',              'ink',       'paper', 'large'],
   ['Login body text',                   'inkMuted',  'paper', 'normal'],
 
-  // Landing page — Marginalia wordmark in the top bar.
-  ['Top-bar wordmark "Marginalia"',     'ink',       'paper', 'large'],
+  // Landing page — NorMech wordmark in the top bar.
+  ['Top-bar wordmark "NorMech"',        'ink',       'paper', 'large'],
   // Landing page — small mono tagline in the top bar (right side,
   // hidden below 640px).
   ['Top-bar tagline (mono)',            'inkMuted',  'paper', 'normal'],
@@ -143,11 +143,11 @@ const PAIRS = [
   // Landing page — 3-step strip text under the cards.
   ['3-step strip text',                 'inkMuted',  'paper', 'normal'],
   // Landing page — footer line.
-  ['Footer "Marginalia · for research use"', 'inkMuted', 'paper', 'normal'],
+  ['Footer "NorMech · for research use"', 'inkMuted', 'paper', 'normal'],
   // Landing page — page kicker (under the top bar).
   ['Page kicker (under top bar)',       'accent',    'paper', 'normal'],
-  // Chrome / annotator — the new "Marginalia" wordmark text.
-  ['Chrome wordmark "Marginalia"',      'ink',       'paper', 'large'],
+  // Chrome / annotator — the new "NorMech" wordmark text.
+  ['Chrome wordmark "NorMech"',         'ink',       'paper', 'large'],
   // Progress map — summary line text.
   ['Progress map summary (numbers)',    'ink',       'paper', 'normal'],
   ['Progress map summary (skipped)',    'accent',    'paper', 'normal'],

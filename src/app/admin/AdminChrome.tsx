@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { LogOut } from 'lucide-react';
 import { Logo } from '@/components/Logo';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { siteName } from '@/config/brand';
+import { siteName, tagline } from '@/config/brand';
 import { useToast } from '@/components/ui/Toast';
 
 export function AdminChrome() {
@@ -32,9 +32,14 @@ export function AdminChrome() {
       <div className="max-w-[1280px] mx-auto px-6 md:px-10 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
           <Logo size={20} className="text-ink shrink-0" />
-          <span className="hidden sm:inline-block w-10 h-px bg-ink/30" aria-hidden />
           <span className="font-display text-[15px] leading-none tracking-tightish text-ink truncate">
             {siteName}
+          </span>
+          <span
+            className="hidden min-[900px]:inline-block font-mono text-[10.5px] tracking-widerish text-inkMuted whitespace-nowrap"
+            title={tagline}
+          >
+            — {tagline}
           </span>
           <span className="hidden sm:inline-block w-3 h-px bg-ink/20" aria-hidden />
           <span className="catalogue text-vermilion dark:text-vermilionBright">— Administrator</span>

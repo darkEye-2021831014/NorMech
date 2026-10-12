@@ -2,12 +2,12 @@
   <!-- Rounded-square ink tile. Solid background so the mark never
        disappears against light or dark tab chrome. -->
   <rect x="0" y="0" width="64" height="64" rx="10" fill="#14120F"/>
-  <!-- Serif "M" in the paper color. Thick strokes so it stays
+  <!-- Serif "N" in the paper color. Thick strokes so it stays
        legible at 16x16. -->
   <text x="32" y="46" text-anchor="middle"
         font-family="Georgia, 'Times New Roman', serif"
         font-weight="700" font-size="38" letter-spacing="-1"
-        fill="#F4EFE6">M</text>
-  <!-- Vermilion marginalia dot in the top-right corner. -->
+        fill="#F4EFE6">N</text>
+  <!-- Vermilion accent dot in the top-right corner. -->
   <circle cx="51" cy="13" r="5" fill="#B02B0F"/>
 </svg>

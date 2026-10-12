@@ -1,10 +1,12 @@
-# Meme Annotator
+# NorMech
 
-A scholarly two-sided application for the close annotation of meme imagery.
-The **admin** side lets a curator build datasets from a public Google Drive
-folder, generate access keys, and review reader marks. The **annotator** side
-is a public, key-gated reading flow where named readers mark each image with
-one of four harm-source labels and export their work as a CSV.
+**NorMech** — Normalization Mechanism dataset annotation. A scholarly
+two-sided application for the close annotation of meme imagery. The
+**admin** side lets a curator build datasets from a public Google Drive
+folder, generate access keys, and review reader marks. The **annotator**
+side is a public, key-gated reading flow where named readers mark each
+image with one of four harm-source labels and export their work as a
+CSV.
 
 The whole project is built on Next.js 14 (App Router) + Supabase, with a
 deliberate "archivist's lab notebook" aesthetic — paper backgrounds, ink

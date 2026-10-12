@@ -148,13 +148,12 @@ test.describe('Viewport / no-scroll layout', () => {
         ).toBeLessThanOrEqual(noOverflow.innerHeight);
 
         // Both entrance buttons must be visible (in the viewport, not
-        // scrolled off). We locate by the link's href + accessible
-        // name to be robust to copy tweaks.
+        // scrolled off). The current copy is "Annotator" / "Admin".
         await expect(
-          page.getByRole('link', { name: /reader.s seat/i })
+          page.getByRole('link', { name: /^Annotator$/i })
         ).toBeVisible({ timeout: 5_000 });
         await expect(
-          page.getByRole('link', { name: /curator.s desk/i })
+          page.getByRole('link', { name: /^Admin$/i })
         ).toBeVisible({ timeout: 5_000 });
 
         // Screenshot artifact under test-results/viewport/.

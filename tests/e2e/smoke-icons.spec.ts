@@ -92,9 +92,11 @@ test.describe('Brand + progress map smoke (1280x720)', () => {
       const logos = page.locator('header svg[aria-hidden="true"]');
       await expect(logos.first()).toBeVisible({ timeout: 5_000 });
 
-      // 2) The "Marginalia" wordmark must be visible in the top bar.
+      // 2) The "NorMech" wordmark must be visible in the top bar.
+      // The aria-label on the home link is
+      //   "NorMech — Normalization Mechanism home".
       await expect(
-        page.getByRole('link', { name: /Marginalia home/i })
+        page.getByRole('link', { name: /NorMech.*home/i })
       ).toBeVisible({ timeout: 5_000 });
 
       // 3) The favicon link must point at the new icon.
@@ -105,7 +107,7 @@ test.describe('Brand + progress map smoke (1280x720)', () => {
         return link ? link.href : null;
       });
       expect(faviconHref, 'favicon <link rel="icon"> href').toContain('/icon.svg');
-      expect(faviconHref, 'favicon ?v=2 cache-bust').toContain('v=2');
+      expect(faviconHref, 'favicon ?v=3 cache-bust').toContain('v=3');
 
       // 4) Both entrance cards inside the viewport.
       const annotatorLink = page.getByRole('link', { name: /^Annotator$/i });
@@ -159,7 +161,7 @@ test.describe('Brand + progress map smoke (1280x720)', () => {
       await dismissGuidelinesIfPresent(page);
       await waitForFirstImage(page);
 
-      // 1) The <Logo> + "Marginalia — Annotator" wordmark in the
+      // 1) The <Logo> + "NorMech — Annotator" wordmark in the
       //    annotator chrome.
       const logos = page.locator('header svg[aria-hidden="true"]');
       await expect(logos.first()).toBeVisible({ timeout: 5_000 });

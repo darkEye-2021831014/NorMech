@@ -90,7 +90,7 @@ export default function GlobalError({
       <footer className="border-t border-ink/15">
         <div className="max-w-[1280px] mx-auto px-6 md:px-10 py-5 text-center">
           <p className="catalogue text-inkMuted">
-            M.A. — Vol. I · Errata sheet
+            NorMech · Errata sheet
           </p>
         </div>
       </footer>

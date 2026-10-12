@@ -58,14 +58,14 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: siteName }],
   creator: siteName,
-  // `?v=2` busts any browser-cached favicon.ico from the old
-  // "Meme Annotator" mark.
+  // `?v=3` busts any browser-cached favicon.ico from previous
+  // marks (Meme Annotator, Marginalia, etc.).
   icons: {
     icon: [
-      { url: '/favicon.ico?v=2', type: 'image/x-icon' },
-      { url: '/icon.svg?v=2', type: 'image/svg+xml' },
+      { url: '/favicon.ico?v=3', type: 'image/x-icon' },
+      { url: '/icon.svg?v=3', type: 'image/svg+xml' },
     ],
-    apple: '/apple-icon.png?v=2',
+    apple: '/apple-icon.png?v=3',
   },
   manifest: '/site.webmanifest',
   openGraph: {

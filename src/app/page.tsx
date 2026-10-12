@@ -6,7 +6,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { ArrowUpRight, PenLine, Settings2 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Logo } from '@/components/Logo';
-import { siteName, tagline } from '@/config/brand';
+import { siteName, tagline, expandedName } from '@/config/brand';
 import { cn } from '@/lib/utils';
 
 export default function LandingPage() {
@@ -28,24 +28,33 @@ export default function LandingPage() {
   // are vertically centered in the remaining space.
   return (
     <main className="min-h-dvh flex flex-col">
-      {/* Top bar: logo + wordmark on the left; tagline + theme
-          toggle on the right. The tagline hides below 640px. */}
+      {/* Top bar: logo + wordmark + expanded name on the left;
+          a short "Normalization Mechanism dataset" caption + theme
+          toggle on the right. The expanded name on the left hides
+          below 900px so it never truncates awkwardly. The right
+          caption hides below 640px. */}
       <header className="border-b border-ink/15 shrink-0">
         <div className="max-w-[1280px] mx-auto px-6 md:px-10 py-3 flex items-center justify-between gap-4">
           <Link
             href="/"
             prefetch={false}
             className="inline-flex items-center gap-2.5 min-w-0"
-            aria-label={`${siteName} home`}
+            aria-label={`${siteName} — ${expandedName} home`}
           >
             <Logo size={22} className="text-ink shrink-0" />
             <span className="font-display text-[16px] leading-none tracking-tightish text-ink truncate">
               {siteName}
             </span>
+            <span
+              className="hidden min-[900px]:inline-block font-mono text-[10.5px] tracking-widerish text-inkMuted whitespace-nowrap"
+              title={expandedName}
+            >
+              — {expandedName}
+            </span>
           </Link>
           <div className="flex items-center gap-3 sm:gap-5 min-w-0">
             <span className="hidden sm:inline font-mono text-[11px] tracking-widerish text-inkMuted truncate">
-              {tagline}
+              Normalization Mechanism dataset
             </span>
             <ThemeToggle />
           </div>

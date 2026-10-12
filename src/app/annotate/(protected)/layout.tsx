@@ -36,6 +36,11 @@ export default async function ProtectedAnnotateLayout({
         accessKey={dataset.access_key}
         annotated={annotated}
         total={total}
+        // Always-available download button once at least one
+        // annotation exists. (The dedicated completion banner in
+        // the right panel also offers it; this is the always-on
+        // chrome affordance for early-arriving users.)
+        showDownloadButton={annotated > 0}
       />
       <div className="relative z-10 flex-1 min-h-0 flex flex-col">{children}</div>
     </div>
