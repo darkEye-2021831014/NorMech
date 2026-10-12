@@ -241,3 +241,50 @@ the annotator footer.
 - To wipe a user's annotations, run `DELETE /api/admin/users/{id}`
   with an admin cookie (the same action is exposed in the
   DatasetDetail drawer).
+
+## End-to-end tests (Playwright)
+
+The Playwright suite lives in `tests/e2e/` and runs **entirely inside
+Docker** — no host-side browser install required. The `e2e` service in
+`docker-compose.yml` uses the official `mcr.microsoft.com/playwright`
+image, so it works on any platform (including the project's old macOS
+host that can't run the bundled Playwright chromium).
+
+The suite currently contains one spec, `first-image.spec.ts`, which
+guards the "first image on `/annotate` is visible on a fresh load"
+regression. It runs three scenarios:
+
+1. **10 fresh contexts, un-throttled** — register a new user each
+   iteration and assert the first image renders within 8s, with
+   `complete === true`, `naturalWidth > 0`, opacity > 0.5, no
+   skeleton, no spinner, and no console/hydration errors.
+2. **One slow-3G throttled run** — apply CDP throttling (400 ms
+   latency, 400 kbps) after login and reload; the image must still
+   render within 30s.
+3. **One resume** — re-login as a user and assert the next
+   unannotated image renders.
+
+Run it (with the dev server already up):
+
+```bash
+docker compose up web -d       # start the dev server
+docker compose run --rm e2e    # run the suite
+```
+
+The first run pulls the ~2.5 GB Playwright image and installs
+`@playwright/test` + `@supabase/supabase-js` into the
+`e2e_node_modules` named volume; subsequent runs are fast. Test
+artifacts land in `./test-results` and `./playwright-report`.
+
+You can run a single spec on the host against a running dev server
+(this requires Playwright installed locally; the Docker flow does
+not):
+
+```bash
+npm run test:e2e             # headless
+npm run test:e2e:headed      # browser visible
+```
+
+The `e2e/run.sh` entrypoint intercepts `/api/image/*` via
+`page.route(...)` and serves the local fixtures in
+`tests/fixtures/`, so the suite does not hit the real image proxy.

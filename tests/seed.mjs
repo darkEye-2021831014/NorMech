@@ -23,9 +23,12 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
-const SEED_DATASET_NAME = 'E2E seed dataset';
-const SEED_ACCESS_KEY = 'E2EKEY0';
-const SEED_IMAGE_COUNT = 6;
+const SEED_DATASET_NAME = process.env.SEED_DATASET_NAME || 'E2E seed dataset';
+const SEED_ACCESS_KEY = process.env.SEED_ACCESS_KEY || 'E2EKEY0';
+// Number of images to insert. Defaults to 6; the boundary-navigation
+// test suite overrides this via SEED_IMAGE_COUNT to use a 5-image
+// dataset so it can step exactly off the end.
+const SEED_IMAGE_COUNT = Number(process.env.SEED_IMAGE_COUNT || 6);
 const SEED_PARTIAL_ANNOTATIONS = 2;
 
 const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {

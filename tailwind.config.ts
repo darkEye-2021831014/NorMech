@@ -10,12 +10,15 @@ const config: Config = {
     extend: {
       colors: {
         paper: 'rgb(var(--paper) / <alpha-value>)',
+        paperStrong: 'rgb(var(--paper-strong) / <alpha-value>)',
         ink: 'rgb(var(--ink) / <alpha-value>)',
         inkSoft: 'rgb(var(--ink-soft) / <alpha-value>)',
         inkMuted: 'rgb(var(--ink-muted) / <alpha-value>)',
         vermilion: 'rgb(var(--vermilion) / <alpha-value>)',
         vermilionSoft: 'rgb(var(--vermilion-soft) / <alpha-value>)',
+        vermilionBright: 'rgb(var(--vermilion-bright) / <alpha-value>)',
         olive: 'rgb(var(--olive) / <alpha-value>)',
+        oliveBright: 'rgb(var(--olive-bright) / <alpha-value>)',
         rule: 'rgb(var(--rule) / <alpha-value>)',
         cardBg: 'rgb(var(--card-bg) / <alpha-value>)',
       },

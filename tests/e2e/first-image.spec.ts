@@ -71,9 +71,9 @@ async function stubImageProxy(page: Page, seed: Seed) {
 async function loginAnnotator(page: Page, accessKey: string, name: string) {
   await page.goto('/annotate/login');
   await page.getByLabel('Access key').fill(accessKey);
-  await page.getByLabel('Name').fill(name);
-  await page.getByRole('button', { name: /enter|sign in|start/i }).click();
-  await page.waitForURL(/\/annotate(\?|$)/, { timeout: 10_000 });
+  await page.getByLabel('Your name').fill(name);
+  await page.getByRole('button', { name: /enter|opening/i }).click();
+  await page.waitForURL(/\/annotate(\?|$)/, { timeout: 15_000 });
 }
 
 /**
@@ -109,10 +109,33 @@ async function expectFirstImageVisible(page: Page) {
   // the current image.
   const img = page.locator('img[alt^="Image for annotation"]').first();
 
-  // (a) visible
+  // (a) visible (rendered with non-zero size)
   await expect(img).toBeVisible({ timeout: 8_000 });
 
+  // (a.5) Wait for the data-loaded attribute on the wrapper to flip
+  // to "true". This is the source of truth for "the annotator has
+  // decided this image is ready". Using this instead of guessing at
+  // CSS opacity transitions means we don't have to race a 200ms
+  // transition.
+  const wrapper = page.locator('[data-testid="annotator-image"]').first();
+  await expect(wrapper).toHaveAttribute('data-loaded', 'true', { timeout: 8_000 });
+
   // (b) complete + naturalWidth > 0
+  // Wait for the CSS opacity transition to settle (200ms in
+  // AnnotatorClient, plus a small buffer). Without this, the
+  // computed opacity can read as 0 right after the class change
+  // even though the image is fully visible to the user.
+  await page.waitForFunction(
+    () => {
+      const el = document.querySelector(
+        'img[alt^="Image for annotation"]'
+      ) as HTMLImageElement | null;
+      if (!el) return false;
+      const op = parseFloat(window.getComputedStyle(el).opacity);
+      return op > 0.95;
+    },
+    { timeout: 5_000 }
+  );
   const ready = await img.evaluate(
     (el: HTMLImageElement) => ({
       complete: el.complete,
@@ -143,14 +166,16 @@ test.describe('Annotator first image', () => {
     test.setTimeout(180_000);
 
     for (let i = 1; i <= 10; i++) {
-      const ctx = await browser.newContext({
-        // Disable cache: every request goes to the network.
-        bypassCSP: true,
-      });
+      // Fresh context per iteration; cache is implicitly disabled
+      // because every image request is intercepted by stubImageProxy
+      // and served from disk. No external network hits.
+      const ctx = await browser.newContext();
       const page = await ctx.newPage();
       const { consoleMessages, pageErrors } = captureLogs(page);
       await stubImageProxy(page, seed);
 
+      let didFail = false;
+      let failureMessage: string | undefined;
       try {
         await loginAnnotator(page, seed.accessKey, `e2e-user-${i}`);
         const ready = await expectFirstImageVisible(page);
@@ -159,16 +184,99 @@ test.describe('Annotator first image', () => {
           (m) => m.type === 'error' || (m.type === 'warning' && /hydrat/i.test(m.text))
         );
         if (errors.length > 0 || pageErrors.length > 0) {
-          throw new Error(
+          didFail = true;
+          failureMessage =
             `Run ${i}: console/page errors detected.\n` +
-              `  console: ${JSON.stringify(errors, null, 2)}\n` +
-              `  page errors: ${JSON.stringify(pageErrors, null, 2)}\n` +
-              `  img: ${JSON.stringify(ready, null, 2)}`
-          );
+            `  console: ${JSON.stringify(errors, null, 2)}\n` +
+            `  page errors: ${JSON.stringify(pageErrors, null, 2)}\n` +
+            `  img: ${JSON.stringify(ready, null, 2)}`;
         }
+      } catch (err) {
+        didFail = true;
+        failureMessage = `Run ${i}: ${err instanceof Error ? err.message : String(err)}`;
       } finally {
         await ctx.close();
       }
+      if (didFail) {
+        throw new Error(failureMessage);
+      }
+    }
+  });
+
+  test('renders the first image under slow-3G throttling', async ({ browser }) => {
+    const seed = loadSeed();
+    test.setTimeout(120_000);
+
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    const { consoleMessages, pageErrors } = captureLogs(page);
+    await stubImageProxy(page, seed);
+
+    let didFail = false;
+    let failureMessage: string | undefined;
+    const cdp = await ctx.newCDPSession(page);
+    try {
+      // Log in un-throttled so the test can reach /annotate
+      // quickly. We then turn on slow-3G before the dashboard's
+      // first image request goes out, by reloading the page
+      // (which forces a fresh image request).
+      await loginAnnotator(page, seed.accessKey, 'e2e-slow3g-user');
+      // Now enable slow-3G and reload.
+      await cdp.send('Network.enable');
+      await cdp.send('Network.emulateNetworkConditions', {
+        offline: false,
+        latency: 400, // ms
+        downloadThroughput: (400 * 1000) / 8, // 400 kbps
+        uploadThroughput: (400 * 1000) / 8,
+      });
+      await page.reload();
+      // Larger budgets because everything (page load + image)
+      // is throttled.
+      const img = page.locator('img[alt^="Image for annotation"]').first();
+      await expect(img).toBeVisible({ timeout: 30_000 });
+      await expect(
+        page.locator('[data-testid="annotator-image"]').first()
+      ).toHaveAttribute('data-loaded', 'true', { timeout: 30_000 });
+      await page.waitForFunction(
+        () => {
+          const el = document.querySelector(
+            'img[alt^="Image for annotation"]'
+          ) as HTMLImageElement | null;
+          if (!el) return false;
+          return parseFloat(window.getComputedStyle(el).opacity) > 0.95;
+        },
+        { timeout: 10_000 }
+      );
+
+      const errors = consoleMessages.filter(
+        (m) => m.type === 'error' || (m.type === 'warning' && /hydrat/i.test(m.text))
+      );
+      if (errors.length > 0 || pageErrors.length > 0) {
+        didFail = true;
+        failureMessage =
+          `slow-3g: console/page errors detected.\n` +
+          `  console: ${JSON.stringify(errors, null, 2)}\n` +
+          `  page errors: ${JSON.stringify(pageErrors, null, 2)}`;
+      }
+    } catch (err) {
+      didFail = true;
+      failureMessage = `slow-3g: ${err instanceof Error ? err.message : String(err)}`;
+    } finally {
+      try {
+        await cdp.send('Network.emulateNetworkConditions', {
+          offline: false,
+          latency: 0,
+          downloadThroughput: 0,
+          uploadThroughput: 0,
+        });
+        await cdp.detach();
+      } catch {
+        // ignore — context may already be closed
+      }
+      await ctx.close();
+    }
+    if (didFail) {
+      throw new Error(failureMessage);
     }
   });
 
@@ -181,11 +289,13 @@ test.describe('Annotator first image', () => {
     // aren't set, we skip (the other test covers the fresh case).
     const seed = loadSeed();
 
-    const ctx = await browser.newContext({ bypassCSP: true });
+    const ctx = await browser.newContext();
     const page = await ctx.newPage();
     const { consoleMessages, pageErrors } = captureLogs(page);
     await stubImageProxy(page, seed);
 
+    let didFail = false;
+    let failureMessage: string | undefined;
     try {
       // The seed file may or may not have annotations. We test the
       // path either way: the dashboard always lands on the first
@@ -199,10 +309,22 @@ test.describe('Annotator first image', () => {
       const errors = consoleMessages.filter(
         (m) => m.type === 'error' || (m.type === 'warning' && /hydrat/i.test(m.text))
       );
-      expect(errors, 'no console errors / hydration warnings').toHaveLength(0);
-      expect(pageErrors, 'no uncaught page errors').toHaveLength(0);
+      if (errors.length > 0 || pageErrors.length > 0) {
+        didFail = true;
+        failureMessage =
+          `resume: console/page errors detected.\n` +
+          `  console: ${JSON.stringify(errors, null, 2)}\n` +
+          `  page errors: ${JSON.stringify(pageErrors, null, 2)}\n` +
+          `  img: ${JSON.stringify(ready, null, 2)}`;
+      }
+    } catch (err) {
+      didFail = true;
+      failureMessage = `resume: ${err instanceof Error ? err.message : String(err)}`;
     } finally {
       await ctx.close();
+    }
+    if (didFail) {
+      throw new Error(failureMessage);
     }
   });
 });

@@ -7,12 +7,22 @@
   --paper: 244 239 230;        /* #F4EFE6 */
   --ink: 20 18 15;              /* #14120F */
   --ink-soft: 45 41 36;
-  --ink-muted: 110 100 88;
-  --vermilion: 217 67 43;       /* #D9432B */
-  --vermilion-soft: 232 110 88;
-  --olive: 124 130 80;          /* muted olive secondary */
+  --ink-muted: 88 78 66;        /* deepened for AA contrast on paper */
+  /* Deep vermilion for FILLS. Pairs with paperStrong text (5.7:1 on
+     light, 5.7:1 on dark). Used for primary card, selected state, and
+     the ink-on-light headline accent. */
+  --vermilion: 176 43 15;       /* #B02B0F */
+  --vermilion-soft: 214 78 52;
+  /* Bright vermilion for SMALL TEXT on dark surfaces. Pairs with
+     dark paper (4.6:1+). Used in dark theme for the login kicker,
+     the "picture" accent word, and any small accent text. */
+  --vermilion-bright: 230 107 71; /* #E66B47 */
+  --olive: 90 96 56;            /* #5A6038 — deeper for AA on paperStrong */
+  --olive-bright: 174 184 95;   /* #AEB85F — for selected state on dark */
   --rule: 20 18 15;             /* 1px ink border color */
   --card-bg: 250 246 238;       /* slightly lighter paper */
+  /* Pure off-white used on filled accent surfaces. */
+  --paper-strong: 255 248 238;
 }
 
 .dark {
@@ -20,12 +30,15 @@
   --paper: 20 18 15;
   --ink: 244 239 230;
   --ink-soft: 220 213 198;
-  --ink-muted: 150 142 124;
-  --vermilion: 217 67 43;
-  --vermilion-soft: 232 110 88;
-  --olive: 160 165 110;
+  --ink-muted: 178 168 148;     /* lifted for AA contrast on dark paper */
+  --vermilion: 176 43 15;       /* same deeper fill; pairs with paperStrong */
+  --vermilion-soft: 230 107 71;
+  --vermilion-bright: 230 107 71;
+  --olive: 100 114 48;          /* #647230 — deeper for AA on paperStrong */
+  --olive-bright: 90 107 38;    /* #5A6B26 — deeper olive for AA on paperStrong */
   --rule: 244 239 230;
   --card-bg: 28 25 21;
+  --paper-strong: 255 248 238;
 }
 
 * {

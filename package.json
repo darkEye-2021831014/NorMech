@@ -10,7 +10,9 @@
     "prod": "next build && next start",
     "seed:e2e": "node tests/seed.mjs",
     "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "e2e": "docker compose run --rm e2e",
+    "e2e:up": "docker compose up web -d"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

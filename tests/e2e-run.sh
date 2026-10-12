@@ -4,13 +4,6 @@
 # container at /e2e/tests/.
 set -e
 
-echo "Installing test deps…"
-PLAYWRIGHT_VERSION=$(node -p "require('./tests/package.json').dependencies['@playwright/test'].replace(/^\^/, '')")
-SUPABASE_VERSION=$(node -p "require('./tests/package.json').dependencies['@supabase/supabase-js'].replace(/^\^/, '')")
-npm install --no-audit --no-fund --silent \
-  "@playwright/test@${PLAYWRIGHT_VERSION}" \
-  "@supabase/supabase-js@${SUPABASE_VERSION}"
-
 echo "Waiting for web at ${E2E_BASE_URL}…"
 ATTEMPTS=60
 i=0
@@ -32,5 +25,9 @@ node tests/seed.mjs > tests/.seed.json
 cat tests/.seed.json
 echo
 
+# playwright is provided by the e2e_node_modules volume (kept in sync
+# with the project by `npm install --no-save @playwright/test`).
+# We use the binary in node_modules/.bin so we don't depend on npx's
+# download cache.
 echo "Running Playwright…"
-npx --no-install playwright test "$@"
+./node_modules/.bin/playwright test "$@"

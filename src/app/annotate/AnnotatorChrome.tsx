@@ -37,7 +37,7 @@ export function AnnotatorChrome({ name, accessKey, annotated, total }: Props) {
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
           <span className="catalogue">M.A.</span>
           <span className="hidden sm:inline-block w-12 h-px bg-ink/30" aria-hidden />
-          <span className="catalogue text-vermilion">— Annotator</span>
+          <span className="catalogue text-vermilion dark:text-vermilionBright">— Annotator</span>
         </div>
         <div className="flex items-center gap-3 sm:gap-5 min-w-0">
           <div className="hidden md:flex items-center gap-3 min-w-0">

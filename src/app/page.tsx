@@ -2,234 +2,172 @@
 
 import Link from 'next/link';
 import { motion, useReducedMotion } from 'framer-motion';
-import { ArrowUpRight, PenLine, Settings2, BookOpen } from 'lucide-react';
+import { ArrowUpRight, PenLine, Settings2 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { cn } from '@/lib/utils';
 
 export default function LandingPage() {
   const reduce = useReducedMotion();
 
+  // The composition is one viewport tall. The top bar is the only
+  // fixed-height row; the body is flex-1 with items-center so the
+  // headline + paragraph + entrance cards are vertically centered
+  // in the remaining space at 1280x720 desktop and 390x844 phone.
   return (
-    <main className="min-h-screen relative">
-      {/* Top frame: catalogue strip */}
-      <header className="border-b border-ink/15">
+    <main className="min-h-dvh flex flex-col">
+      {/* Slim top bar — only the catalogue mark and theme toggle. */}
+      <header className="border-b border-ink/15 shrink-0">
         <div className="max-w-[1280px] mx-auto px-6 md:px-10 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <span className="catalogue">No. 001</span>
             <span className="hidden sm:inline-block w-12 h-px bg-ink/30" aria-hidden />
             <span className="catalogue">M.A. — Vol. I</span>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden md:inline catalogue text-inkMuted">
-              an instrument for the close annotation of meme imagery
-            </span>
-            <ThemeToggle />
-          </div>
+          <ThemeToggle />
         </div>
       </header>
 
-      {/* Asymmetric editorial layout */}
-      <section className="max-w-[1280px] mx-auto px-6 md:px-10 pt-16 md:pt-24 pb-24">
-        <div className="grid grid-cols-12 gap-y-16 md:gap-x-10">
-          {/* Left margin — folio */}
-          <aside className="hidden lg:block col-span-2 pt-2">
-            <div className="sticky top-12 space-y-6">
-              <div>
-                <p className="catalogue text-inkMuted mb-1">Folio</p>
-                <p className="font-mono text-[11px] text-inkMuted leading-relaxed">
-                  f. 1r
-                  <br />
-                  <span className="italic text-ink/60">— entry —</span>
-                </p>
-              </div>
-              <div className="h-px bg-ink/20" />
-              <div>
-                <p className="catalogue text-inkMuted mb-1">Press</p>
-                <p className="font-display text-[15px] leading-snug italic text-ink/80">
-                  Edition of <br />one observer <br />at a time.
-                </p>
-              </div>
-              <div className="h-px bg-ink/20" />
-              <div>
-                <p className="catalogue text-inkMuted mb-1">Tooling</p>
-                <p className="font-mono text-[11px] text-inkMuted">v. 0.1.0</p>
-              </div>
-            </div>
-          </aside>
+      {/* Body: vertically centered single-viewport composition. */}
+      <section className="flex-1 min-h-0 flex items-center justify-center px-6 py-6">
+        <div className="w-full max-w-[960px] flex flex-col items-center text-center">
+          <motion.p
+            className="catalogue text-vermilion dark:text-vermilionBright mb-4 flex items-center gap-2"
+            initial={reduce ? false : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: [0.2, 0.7, 0.2, 1] }}
+          >
+            <span className="w-1.5 h-1.5 bg-vermilion dark:bg-vermilionBright rounded-full" aria-hidden />
+            The Meme Annotator
+          </motion.p>
 
-          {/* Main column — title block */}
-          <div className="col-span-12 lg:col-span-7">
-            <motion.div
-              initial={reduce ? false : { opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, ease: [0.2, 0.7, 0.2, 1] }}
-            >
-              <p className="catalogue text-vermilion mb-6 flex items-center gap-2">
-                <span className="w-1.5 h-1.5 bg-vermilion rounded-full" aria-hidden />
-                The Meme Annotator
-              </p>
+          <motion.h1
+            className="font-display leading-[1.0] tracking-tightest text-ink"
+            style={{ fontSize: 'clamp(2rem, 5.5vw, 4.25rem)' }}
+            initial={reduce ? false : { opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.08, ease: [0.2, 0.7, 0.2, 1] }}
+          >
+            A reading room
+            <br />
+            <span className="italic text-ink/85">for the</span>{' '}
+            <span className="text-vermilion dark:text-vermilionBright">picture</span>
+            <br />
+            <span className="text-ink">that travels with care.</span>
+          </motion.h1>
 
-              <h1 className="font-display text-[44px] sm:text-[58px] md:text-[72px] leading-[0.95] tracking-tightest text-ink">
-                A reading room
-                <br />
-                <span className="italic text-ink/80">for the</span>{' '}
-                <span className="text-vermilion">picture</span>
-                <br />
-                <span className="text-ink/70">that travels.</span>
-              </h1>
+          <motion.p
+            className="mt-5 max-w-[42ch] text-ink"
+            style={{ fontSize: 'clamp(0.95rem, 1.4vw, 1.05rem)' }}
+            initial={reduce ? false : { opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.16, ease: [0.2, 0.7, 0.2, 1] }}
+          >
+            Open a dataset, read each picture one at a time, and mark what
+            the work asks of you.
+          </motion.p>
 
-              <div className="mt-8 max-w-[58ch] space-y-4">
-                <p className="font-sans text-[17px] leading-[1.55] text-ink/85">
-                  The Meme Annotator is a small instrument built for the slow,
-                  attentive study of images that move. A reader enters with a key,
-                  receives a single page at a time, and records what the work
-                  asks of them.
-                </p>
-                <p className="font-sans text-[15px] leading-[1.6] text-inkMuted">
-                  No leaderboards. No streaks. No metrics of speed. The work is
-                  the marking, the marking is the record, the record is the
-                  archive.
-                </p>
-              </div>
-            </motion.div>
-
-            {/* Entry points — editorial, not cards */}
-            <motion.div
-              initial={reduce ? false : { opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.15, ease: [0.2, 0.7, 0.2, 1] }}
-              className="mt-14"
-            >
-              <p className="catalogue text-inkMuted mb-5">— Two entrances —</p>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <EntryPoint
-                  href="/annotate"
-                  label="I.  Annotator"
-                  kicker="The reader's seat"
-                  description="Enter a dataset with the access key printed on your invitation. You will be given a single image and a single question."
-                  icon={<PenLine size={18} strokeWidth={1.5} />}
-                  accent="vermilion"
-                />
-                <EntryPoint
-                  href="/admin"
-                  label="II.  Administrator"
-                  kicker="The curator's desk"
-                  description="Maintain the catalogue: build datasets, generate keys, review the marks left by your readers."
-                  icon={<Settings2 size={18} strokeWidth={1.5} />}
-                  accent="olive"
-                />
-              </div>
-            </motion.div>
-          </div>
-
-          {/* Right margin — colophon */}
-          <aside className="hidden lg:block col-span-3 pt-2">
-            <motion.div
-              initial={reduce ? false : { opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.6, delay: 0.2 }}
-              className="sticky top-12 space-y-5"
-            >
-              <div className="border-l border-ink/30 pl-4 space-y-3">
-                <p className="catalogue text-inkMuted">Colophon</p>
-                <p className="font-display italic text-[14px] leading-[1.55] text-ink/80">
-                  Set in Fraunces, after a 19th-century French canon, and in
-                  IBM Plex, the modern bookkeeper&apos;s face. Pressed on warm
-                  paper that remembers the hand.
-                </p>
-              </div>
-
-              <div className="border-l border-ink/30 pl-4 space-y-2">
-                <p className="catalogue text-inkMuted">Mode</p>
-                <p className="font-mono text-[11px] text-ink leading-relaxed">
-                  single-observer,
-                  <br />
-                  non-persistent,
-                  <br />
-                  recorded only with consent.
-                </p>
-              </div>
-
-              <div className="pt-2">
-                <BookOpen size={20} strokeWidth={1.2} className="text-inkMuted" />
-              </div>
-            </motion.div>
-          </aside>
+          <motion.div
+            className="mt-7 w-full grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4"
+            initial={reduce ? false : { opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.24, ease: [0.2, 0.7, 0.2, 1] }}
+          >
+            <EntryPoint
+              href="/annotate"
+              caption="For participants"
+              label="Annotator"
+              description="Label images from your assigned dataset."
+              icon={<PenLine size={18} strokeWidth={1.5} />}
+              tone="primary"
+            />
+            <EntryPoint
+              href="/admin"
+              caption="For researchers"
+              label="Admin"
+              description="Manage datasets, access keys and annotations."
+              icon={<Settings2 size={18} strokeWidth={1.5} />}
+              tone="secondary"
+            />
+          </motion.div>
         </div>
       </section>
-
-      {/* Foot rule */}
-      <footer className="border-t border-ink/15 mt-6">
-        <div className="max-w-[1280px] mx-auto px-6 md:px-10 py-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <p className="catalogue text-inkMuted">
-            Prepared in the archivist&apos;s office. All marks reserved.
-          </p>
-          <p className="catalogue text-inkMuted">MMXXVI</p>
-        </div>
-      </footer>
     </main>
   );
 }
 
 function EntryPoint({
   href,
+  caption,
   label,
-  kicker,
   description,
   icon,
-  accent,
+  tone,
 }: {
   href: string;
+  caption: string;
   label: string;
-  kicker: string;
   description: string;
   icon: React.ReactNode;
-  accent: 'vermilion' | 'olive';
+  tone: 'primary' | 'secondary';
 }) {
   const reduce = useReducedMotion();
+  const isPrimary = tone === 'primary';
   return (
     <Link
       href={href}
       prefetch={false}
-      className="group block border border-ink/25 hover:border-ink bg-cardBg transition-colors duration-200 ease-notebook rounded-sm"
+      aria-label={label}
+      className={cn(
+        'group block rounded-sm transition-colors duration-200 ease-notebook',
+        isPrimary
+          ? 'bg-vermilion text-paperStrong border border-vermilion hover:bg-vermilion/90'
+          : 'bg-paper text-ink border-[1.5px] border-ink hover:bg-ink hover:text-paper hover:border-ink'
+      )}
     >
       <motion.div
         whileHover={reduce ? undefined : { y: -2 }}
         whileTap={reduce ? undefined : { y: 0 }}
         transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-        className="p-5 sm:p-6 h-full flex flex-col"
+        className="px-5 sm:px-6 py-4 sm:py-5 h-full flex items-center justify-between gap-4 text-left"
       >
-        <div className="flex items-start justify-between mb-5">
-          <div className="flex items-center gap-2 text-ink">
-            {icon}
-            <span className="catalogue text-inkMuted">{kicker}</span>
-          </div>
-          <ArrowUpRight
-            size={18}
-            strokeWidth={1.5}
-            className="text-inkMuted group-hover:text-ink group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform"
-          />
-        </div>
-
-        <h2 className="font-display text-[28px] sm:text-[32px] leading-[1.05] tracking-tightish text-ink mb-3">
-          {label}
-        </h2>
-
-        <p className="font-sans text-[14px] leading-[1.55] text-ink/75 flex-1">
-          {description}
-        </p>
-
-        <div className="mt-5 pt-4 border-t border-ink/15 flex items-center justify-between">
-          <span
-            className={
-              'catalogue ' +
-              (accent === 'vermilion' ? 'text-vermilion' : 'text-olive')
-            }
+        <div className="min-w-0">
+          <div
+            className={cn(
+              'flex items-center gap-2 catalogue',
+              isPrimary ? 'text-paperStrong/85' : 'text-ink'
+            )}
           >
-            Enter →
-          </span>
-          <span className="catalogue text-inkMuted">{href}</span>
+            {icon}
+            <span>{caption}</span>
+          </div>
+          <h2
+            className={cn(
+              'mt-1.5 font-display leading-none',
+              isPrimary ? 'text-paperStrong' : 'text-ink'
+            )}
+            style={{ fontSize: 'clamp(1.5rem, 2.4vw, 2rem)' }}
+          >
+            {label}
+          </h2>
+          <p
+            className={cn(
+              'mt-1.5 text-[13px] leading-snug',
+              isPrimary ? 'text-paperStrong/90' : 'text-ink/80'
+            )}
+          >
+            {description}
+          </p>
         </div>
+        <ArrowUpRight
+          size={20}
+          strokeWidth={1.5}
+          className={cn(
+            'shrink-0 transition-transform duration-200 ease-notebook',
+            isPrimary
+              ? 'text-paperStrong group-hover:translate-x-0.5 group-hover:-translate-y-0.5'
+              : 'text-ink group-hover:translate-x-0.5 group-hover:-translate-y-0.5'
+          )}
+        />
       </motion.div>
     </Link>
   );

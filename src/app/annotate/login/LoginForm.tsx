@@ -103,13 +103,13 @@ export function AnnotateLoginForm() {
       }}
       className="w-full max-w-lg"
     >
-      <p className="catalogue text-vermilion mb-3 flex items-center gap-2">
-        <span className="w-1.5 h-1.5 bg-vermilion rounded-full" aria-hidden />
-        The reader&apos;s seat
+      <p className="catalogue text-vermilion dark:text-vermilionBright mb-3 flex items-center gap-2">
+        <span className="w-1.5 h-1.5 bg-vermilion dark:bg-vermilionBright rounded-full" aria-hidden />
+        Annotator sign in
       </p>
       <h1 className="font-display text-[40px] sm:text-[48px] leading-[0.98] tracking-tightest text-ink mb-3">
         Sign{' '}
-        <span className="italic text-ink/80">the</span>{' '}
+        <span className="italic text-ink/85">the</span>{' '}
         ledger.
       </h1>
       <p className="font-sans text-[15px] leading-[1.6] text-inkMuted mb-8">

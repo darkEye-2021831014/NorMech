@@ -25,18 +25,25 @@ const nextConfig = {
   // with a hash in production), images from our own origin and
   // Drive's CDN, frames denied, no third-party connections.
   async headers() {
+    // Next.js 14 dev mode uses eval() in its HMR / Fast Refresh
+    // runtime; in production it does not. We only relax `script-src`
+    // to allow `unsafe-eval` in dev — production keeps the strict
+    // policy.
+    const isDev = process.env.NODE_ENV !== 'production';
     const csp = [
       `default-src 'self'`,
       // Next.js inlines a tiny theme-init script in <head>; allow it.
-      `script-src 'self' 'unsafe-inline'`,
+      // 'unsafe-eval' is only added in dev (see above).
+      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
       // Next 14 inlines some styles during dev; in prod they're linked.
       // 'unsafe-inline' is required for the framer-motion runtime that
       // sets style.transform on elements.
       `style-src 'self' 'unsafe-inline'`,
       `img-src 'self' data: blob: ${REMOTE_IMAGE_HOSTS.join(' ')}`,
       `font-src 'self' data:`,
-      // API calls go to /api/* on the same origin.
-      `connect-src 'self'`,
+      // API calls go to /api/* on the same origin. In dev we also
+      // need to allow webpack's HMR websocket.
+      `connect-src 'self'${isDev ? ' ws: wss:' : ''}`,
       // Embedding is explicitly denied.
       `frame-ancestors 'none'`,
       `frame-src 'self'`,

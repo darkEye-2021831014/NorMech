@@ -18,7 +18,7 @@
   <text x="600" y="450" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="24" fill="#1a1a1a" opacity="0.7">The Meme Annotator</text>
 
   <!-- bottom row -->
-  <text x="80" y="558" font-family="ui-monospace, monospace" font-size="13" letter-spacing="1.5" fill="#1a1a1a" opacity="0.6">close annotation · single observer · non-persistent</text>
+  <text x="80" y="558" font-family="ui-monospace, monospace" font-size="13" letter-spacing="1.5" fill="#1a1a1a" opacity="0.6">close annotation · single observer</text>
   <text x="1120" y="558" text-anchor="end" font-family="ui-monospace, monospace" font-size="13" letter-spacing="1.5" fill="#1a1a1a" opacity="0.6">MMXXVI</text>
 
   <!-- center dot mark -->

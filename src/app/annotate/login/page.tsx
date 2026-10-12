@@ -22,7 +22,7 @@ export default async function AnnotateLoginPage() {
           <div className="flex items-center gap-4">
             <span className="catalogue">M.A.</span>
             <span className="hidden sm:inline-block w-12 h-px bg-ink/30" aria-hidden />
-            <span className="catalogue text-vermilion">— Annotator</span>
+            <span className="catalogue text-vermilion dark:text-vermilionBright">— Annotator</span>
           </div>
           <Link
             href="/"
@@ -41,7 +41,7 @@ export default async function AnnotateLoginPage() {
 
       <footer className="border-t border-ink/15">
         <div className="max-w-[1280px] mx-auto px-6 md:px-10 py-4 flex items-center justify-between">
-          <p className="catalogue text-inkMuted">Reader&apos;s entrance</p>
+          <p className="catalogue text-inkMuted">Annotator sign in</p>
           <p className="catalogue text-inkMuted">MMXXVI</p>
         </div>
       </footer>

@@ -10,7 +10,6 @@ import {
   useState,
 } from 'react';
 import {
-  AnimatePresence,
   motion,
   useReducedMotion,
 } from 'framer-motion';
@@ -45,6 +44,7 @@ interface Props {
 
 type Status = 'idle' | 'saving' | 'saved' | 'error';
 type PendingSave = { imageId: string; harmSource: HarmSource } | null;
+type Boundary = 'first' | 'last' | null;
 
 interface State {
   annotations: Record<string, HarmSource>;
@@ -58,21 +58,36 @@ interface State {
   imageError: boolean;
   imageStrikeCount: number; // 3 strikes → report-broken state
   imageReported: boolean; // surfaced after 3 strikes
+  // The most-recent "you can't go further" cue, with a timestamp
+  // so the UI knows when to clear it. `null` = no active cue.
+  boundaryCue: { which: Boundary; at: number };
 }
 
 type Action =
   | { type: 'select'; imageId: string; harmSource: HarmSource }
   | { type: 'save_ok'; imageId: string; harmSource: HarmSource }
   | { type: 'save_fail'; message: string }
-  | { type: 'navigate'; direction: 'prev' | 'next' }
-  | { type: 'jump'; index: number }
+  | {
+      type: 'goTo';
+      target: number;
+      total: number;
+    }
   | { type: 'toggle_auto_advance' }
   | { type: 'image_loaded' }
   | { type: 'image_error' }
   | { type: 'image_retry' }
-  | { type: 'clear_saved' };
+  | { type: 'clear_saved' }
+  | { type: 'clear_boundary_cue'; at: number };
 
 const AUTO_ADVANCE_MS = 350;
+const BOUNDARY_CUE_MS = 900;
+
+function clampIndex(i: number, total: number): number {
+  if (total <= 0) return 0;
+  if (i < 0) return 0;
+  if (i > total - 1) return total - 1;
+  return i;
+}
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -110,11 +125,47 @@ function reducer(state: State, action: Action): State {
         pendingSave: null,
       };
     }
-    case 'navigate': {
-      return navigate(state, action.direction);
-    }
-    case 'jump': {
-      return jump(state, action.index);
+    case 'goTo': {
+      // The ONLY path that changes currentIndex. Always clamps to
+      // [0, total-1]. If the user is already on the target and the
+      // target is at a boundary, set a cue so the UI can nudge.
+      const last = action.total - 1;
+      const cur = state.currentIndex;
+      if (action.total <= 0) return state;
+      // Already at the requested spot. If they're at the edge and
+      // tried to go further, surface a boundary cue.
+      if (action.target === cur) {
+        if (cur === 0 && action.target <= 0) {
+          return { ...state, boundaryCue: { which: 'first', at: Date.now() } };
+        }
+        if (cur === last && action.target >= last) {
+          return { ...state, boundaryCue: { which: 'last', at: Date.now() } };
+        }
+        return state;
+      }
+      // Clamp and check for the boundary.
+      const target = clampIndex(action.target, action.total);
+      if (target === cur) {
+        // After clamping we ended up where we already are. This
+        // happens when the user presses Right at the last image
+        // or Left at the first.
+        const which: Boundary = target === 0 ? 'first' : target === last ? 'last' : null;
+        if (which) {
+          return { ...state, boundaryCue: { which, at: Date.now() } };
+        }
+        return state;
+      }
+      return {
+        ...state,
+        currentIndex: target,
+        imageError: false,
+        imageErrorKey: state.imageErrorKey + 1,
+        imageStrikeCount: 0,
+        imageReported: false,
+        status: 'idle',
+        lastError: null,
+        boundaryCue: { which: null, at: 0 },
+      };
     }
     case 'toggle_auto_advance':
       return { ...state, autoAdvance: !state.autoAdvance };
@@ -139,29 +190,13 @@ function reducer(state: State, action: Action): State {
       };
     case 'clear_saved':
       return { ...state, status: 'idle' };
+    case 'clear_boundary_cue':
+      // Only clear if no newer cue has been set.
+      if (state.boundaryCue.at === action.at) {
+        return { ...state, boundaryCue: { which: null, at: 0 } };
+      }
+      return state;
   }
-}
-
-function navigate(state: State, direction: 'prev' | 'next'): State {
-  const delta = direction === 'next' ? 1 : -1;
-  return bumpImage({ ...state, currentIndex: state.currentIndex + delta });
-}
-
-function jump(state: State, index: number): State {
-  if (index < 0 || index === state.currentIndex) return state;
-  return bumpImage({ ...state, currentIndex: index });
-}
-
-function bumpImage(state: State): State {
-  return {
-    ...state,
-    imageError: false,
-    imageErrorKey: state.imageErrorKey + 1,
-    imageStrikeCount: 0,
-    imageReported: false,
-    status: 'idle',
-    lastError: null,
-  };
 }
 
 export function AnnotatorClient({
@@ -175,7 +210,7 @@ export function AnnotatorClient({
 
   const [state, dispatch] = useReducer(reducer, {
     annotations: initialAnnotations,
-    currentIndex: Math.max(0, Math.min(startIndex, images.length - 1)),
+    currentIndex: clampIndex(startIndex, images.length),
     status: 'idle',
     lastError: null,
     pendingSave: null,
@@ -185,6 +220,7 @@ export function AnnotatorClient({
     imageError: false,
     imageStrikeCount: 0,
     imageReported: false,
+    boundaryCue: { which: null, at: 0 },
   });
 
   // Show the "How to annotate" modal on first visit, and on demand.
@@ -212,6 +248,29 @@ export function AnnotatorClient({
     [state.annotations]
   );
   const isComplete = images.length > 0 && annotatedCount === images.length;
+  const lastIndex = Math.max(0, images.length - 1);
+
+  // The single navigation primitive. All paths (Next/Prev buttons,
+  // ArrowLeft/Right, J/K, progress rail, "Jump to first unannotated",
+  // and auto-advance) route through this. The reducer clamps to
+  // [0, lastIndex] and sets `boundaryCue` when the user tried to
+  // go past an edge so the UI can nudge.
+  const goTo = useCallback(
+    (target: number) => {
+      dispatch({ type: 'goTo', target, total: images.length });
+    },
+    [images.length]
+  );
+
+  // Auto-clear the boundary cue after BOUNDARY_CUE_MS.
+  useEffect(() => {
+    if (state.boundaryCue.which === null) return;
+    const at = state.boundaryCue.at;
+    const t = setTimeout(() => {
+      dispatch({ type: 'clear_boundary_cue', at });
+    }, BOUNDARY_CUE_MS);
+    return () => clearTimeout(t);
+  }, [state.boundaryCue.which, state.boundaryCue.at]);
 
   // ---------------------------------------------------------------------
   // Save an annotation. Optimistic via reducer; PUT to the server.
@@ -255,34 +314,42 @@ export function AnnotatorClient({
   );
 
   // ---------------------------------------------------------------------
-  // Auto-advance after a successful save. We schedule when the current
-  // status transitions to 'saved' and a small debounce keeps us from
-  // advancing on the first image (where there's no previous save).
+  // Auto-advance after a successful save. We schedule when the
+  // current status transitions to 'saved'. Critically, we only
+  // advance if there's a NEXT valid index — i.e. the user is NOT
+  // on the last image. When the user marks the last image, the
+  // annotation count either hits `images.length` (→ completion
+  // state) or it doesn't (→ user stays on the last image and sees
+  // the "N still unmarked" prompt).
   // ---------------------------------------------------------------------
   const lastAdvanceFor = useRef<string | null>(null);
   useEffect(() => {
     if (!state.autoAdvance) return;
     if (state.status !== 'saved') return;
     if (!currentImage) return;
+    if (state.currentIndex >= lastIndex) return; // last image — don't advance past
 
     const key = `${currentImage.id}:${state.annotations[currentImage.id]}`;
     if (lastAdvanceFor.current === key) return;
     lastAdvanceFor.current = key;
 
     const t = setTimeout(() => {
-      if (
-        stateRef.current.autoAdvance &&
-        stateRef.current.status === 'saved' &&
-        stateRef.current.currentIndex < images.length - 1
-      ) {
-        dispatch({ type: 'navigate', direction: 'next' });
-      }
+      const ref = stateRef.current;
+      if (!ref.autoAdvance) return;
+      if (ref.status !== 'saved') return;
+      if (ref.currentIndex >= images.length - 1) return;
+      // Route through goTo so clamping/auditing is consistent.
+      // (We use the raw dispatch here because we have a ref, but
+      // it's the SAME shape goTo uses.)
+      dispatch({ type: 'goTo', target: ref.currentIndex + 1, total: images.length });
     }, AUTO_ADVANCE_MS);
     return () => clearTimeout(t);
-  }, [state.status, state.autoAdvance, state.annotations, currentImage, images.length]);
+  }, [state.status, state.autoAdvance, state.annotations, state.currentIndex, currentImage, images.length, lastIndex]);
 
   // ---------------------------------------------------------------------
-  // Keyboard shortcuts.
+  // Keyboard shortcuts. ArrowLeft/J and ArrowRight/K route through
+  // goTo so they clamp at the boundaries; the reducer sets
+  // boundaryCue which the UI uses to nudge.
   // ---------------------------------------------------------------------
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -302,12 +369,16 @@ export function AnnotatorClient({
       if (key === '2') return onSelect('image');
       if (key === '3') return onSelect('both');
       if (key === '4') return onSelect('none');
-      if (e.key === 'ArrowLeft' || key === 'k') return dispatch({ type: 'navigate', direction: 'prev' });
-      if (e.key === 'ArrowRight' || key === 'j') return dispatch({ type: 'navigate', direction: 'next' });
+      if (e.key === 'ArrowLeft' || key === 'j') {
+        return goTo(stateRef.current.currentIndex - 1);
+      }
+      if (e.key === 'ArrowRight' || key === 'k') {
+        return goTo(stateRef.current.currentIndex + 1);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onSelect]);
+  }, [onSelect, goTo]);
 
   // ---------------------------------------------------------------------
   // Preload the next 5 images. The probes only warm the browser
@@ -315,14 +386,17 @@ export function AnnotatorClient({
   // the current image, and never block the rendered <img>. We use
   // a small set to dedupe, and add a 100ms delay so the current
   // image's request (with fetchpriority="high") goes out first.
+  //
+  // Indices are clamped so we never probe an out-of-range row.
   // ---------------------------------------------------------------------
   const preloadCacheRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const last = images.length - 1;
     const t = setTimeout(() => {
       for (let i = 1; i <= 5; i++) {
         const idx = state.currentIndex + i;
-        if (idx >= images.length) continue;
+        if (idx < 0 || idx > last) continue;
         const img = images[idx];
         if (preloadCacheRef.current.has(img.id)) continue;
         preloadCacheRef.current.add(img.id);
@@ -349,19 +423,148 @@ export function AnnotatorClient({
   const progressPct = images.length === 0 ? 0 : (annotatedCount / images.length) * 100;
 
   return (
-    <section className="max-w-[1280px] mx-auto px-4 sm:px-6 md:px-10 pt-5 sm:pt-7 pb-32 sm:pb-12">
-      {/* Progress bar */}
-      <div className="mb-5 sm:mb-6">
-        <div className="flex items-center justify-between mb-1.5">
-          <p className="catalogue text-inkMuted">
-            {datasetName} <span className="text-ink/30 mx-1.5">·</span> {userName}
+    <section
+      data-testid="annotator-page"
+      className="flex-1 min-h-0 flex flex-col lg:flex-row gap-3 px-3 sm:px-4 md:px-6 py-3"
+    >
+      {/* Left column: image + caption. flex-1 min-h-0 so any aspect
+          ratio (very tall / very wide memes) shrinks to fit the
+          available height without pushing the controls off-screen. */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div className="relative flex-1 min-h-0 bg-cardBg border border-ink/15 rounded-sm overflow-hidden">
+          {/*
+            No AnimatePresence / no framer-motion gating the image swap.
+            The image is always in the DOM (keyed by image.id so React
+            resets it on navigation). The skeleton is a sibling, rendered
+            only while !loaded and UNMOUNTED otherwise. Visibility is
+            driven by a CSS data-loaded attribute, never by a JS animation
+            that has to complete.
+          */}
+          {/*
+            Belt-and-suspenders: if the index is out of range (which
+            shouldn't be possible — goTo clamps), render NOTHING
+            rather than the error UI. The error UI only shows when
+            there's a real current image and the image genuinely
+            failed to load.
+          */}
+          {currentImage && !state.imageError && (
+            <AnnotatorImage
+              key={`${currentImage.id}-${state.imageErrorKey}`}
+              imageId={currentImage.id}
+              fileName={currentImage.file_name}
+              onLoad={() => dispatch({ type: 'image_loaded' })}
+              onError={() => dispatch({ type: 'image_error' })}
+            />
+          )}
+          {currentImage && state.imageError && (
+            <div
+              key="error"
+              data-testid="annotator-error"
+              className="absolute inset-0 flex flex-col items-center justify-center text-center px-6"
+            >
+              <AlertTriangle size={20} strokeWidth={1.5} className="text-vermilion mb-2" />
+              {state.imageReported ? (
+                <>
+                  <p className="font-sans text-[14px] text-ink mb-1">
+                    This image appears to be broken.
+                  </p>
+                  <p className="catalogue text-inkMuted mb-1">
+                    {currentImage.file_name}
+                  </p>
+                  <p className="font-mono text-[11px] text-inkMuted mb-4 max-w-[40ch]">
+                    We tried fetching it three times. You can skip it
+                    and continue, or report it and the curator will be
+                    notified.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => goTo(state.currentIndex + 1)}
+                    >
+                      Skip
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={() => {
+                        // Single-shot report: in this build we just
+                        // advance. The state stays reported until
+                        // the user moves on.
+                        goTo(state.currentIndex + 1);
+                      }}
+                    >
+                      <AlertTriangle size={11} strokeWidth={1.5} />
+                      Report &amp; skip
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="font-sans text-[14px] text-ink mb-1">
+                    Could not load this image.
+                  </p>
+                  <p className="catalogue text-inkMuted mb-4">
+                    {currentImage.file_name}
+                    {state.imageStrikeCount > 0 && (
+                      <span className="ml-2 text-vermilion">
+                        (attempt {state.imageStrikeCount}/3)
+                      </span>
+                    )}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={() => dispatch({ type: 'image_retry' })}
+                    >
+                      <RefreshCw size={12} strokeWidth={1.5} />
+                      Retry
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => goTo(state.currentIndex + 1)}
+                    >
+                      Skip
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* File caption row — directly under the image. */}
+        <div className="flex items-center justify-between mt-2 shrink-0">
+          <p className="font-mono text-[12px] text-inkMuted truncate max-w-[60ch]">
+            {currentImage?.file_name}
           </p>
-          <p className="catalogue text-inkMuted tabular-nums">
-            {annotatedCount.toLocaleString()} of {images.length.toLocaleString()} marked
+          <p
+            data-testid="current-counter"
+            className="font-mono text-[11px] text-inkMuted tabular-nums"
+          >
+            #{String(state.currentIndex + 1).padStart(3, '0')} / {images.length}
           </p>
         </div>
+      </div>
+
+      {/* Right column / bottom row on mobile: the control panel.
+          On lg+ it is a 340px wide column with internal overflow-y
+          (so the panel itself can scroll if a future content
+          addition makes it overflow, while the page stays put).
+          Below lg it is a full-width block at the bottom of the
+          page. The panel has its own explicit top padding so it
+          always starts with consistent breathing room below the
+          header. min-h-0 on a flex item is what unlocks
+          overflow-y-auto inside it. */}
+      <aside className="flex flex-col gap-2 shrink-0 w-full lg:w-[340px] lg:h-full lg:min-h-0 lg:overflow-y-auto pt-2 lg:pt-1">
+        {/* Thin progress line — 1px hairline at the very top of the
+            panel. Replaces the old full-width progress bar + the
+            duplicate "X of N marked" counter (the chrome already
+            shows the same number in the header). */}
         <div
-          className="h-[2px] w-full bg-ink/10 overflow-hidden"
+          className="h-px w-full bg-ink/10 overflow-hidden"
           role="progressbar"
           aria-valuenow={annotatedCount}
           aria-valuemin={0}
@@ -374,242 +577,179 @@ export function AnnotatorClient({
             transition={{ duration: reduce ? 0 : 0.35, ease: [0.2, 0.7, 0.2, 1] }}
           />
         </div>
-      </div>
 
-      {/* Hero */}
-      <div className="relative bg-cardBg border border-ink/15 rounded-sm overflow-hidden">
-        <div className="relative aspect-[16/10] w-full">
-          <AnimatePresence mode="wait" initial={false}>
-            {currentImage && !state.imageError ? (
-              <motion.div
-                key={`${currentImage.id}-${state.imageErrorKey}`}
-                initial={reduce ? { opacity: 1 } : { opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={reduce ? { opacity: 1 } : { opacity: 0 }}
-                transition={{ duration: reduce ? 0 : 0.18, ease: [0.2, 0.7, 0.2, 1] }}
-                className="absolute inset-0"
-              >
-                <AnnotatorImage
-                  imageId={currentImage.id}
-                  fileName={currentImage.file_name}
-                  onLoad={() => dispatch({ type: 'image_loaded' })}
-                  onError={() => dispatch({ type: 'image_error' })}
-                />
-              </motion.div>
-            ) : (
-              <motion.div
-                key="error"
-                initial={reduce ? false : { opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.18 }}
-                className="absolute inset-0 flex flex-col items-center justify-center text-center px-6"
-              >
-                <AlertTriangle size={20} strokeWidth={1.5} className="text-vermilion mb-2" />
-                {state.imageReported ? (
-                  <>
-                    <p className="font-sans text-[14px] text-ink mb-1">
-                      This image appears to be broken.
-                    </p>
-                    <p className="catalogue text-inkMuted mb-1">
-                      {currentImage?.file_name}
-                    </p>
-                    <p className="font-mono text-[11px] text-inkMuted mb-4 max-w-[40ch]">
-                      We tried fetching it three times. You can skip it
-                      and continue, or report it and the curator will be
-                      notified.
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => dispatch({ type: 'navigate', direction: 'next' })}
-                      >
-                        Skip
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onClick={() => {
-                          // Single-shot report: POST to a tiny ingest
-                          // endpoint. (For now just navigate on.)
-                          // The redux state remains reported so the
-                          // block stays shown until the user moves on.
-                          dispatch({ type: 'navigate', direction: 'next' });
-                        }}
-                      >
-                        <AlertTriangle size={11} strokeWidth={1.5} />
-                        Report &amp; skip
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <p className="font-sans text-[14px] text-ink mb-1">
-                      Could not load this image.
-                    </p>
-                    <p className="catalogue text-inkMuted mb-4">
-                      {currentImage?.file_name}
-                      {state.imageStrikeCount > 0 && (
-                        <span className="ml-2 text-vermilion">
-                          (attempt {state.imageStrikeCount}/3)
-                        </span>
-                      )}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onClick={() => dispatch({ type: 'image_retry' })}
-                      >
-                        <RefreshCw size={12} strokeWidth={1.5} />
-                        Retry
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => dispatch({ type: 'navigate', direction: 'next' })}
-                      >
-                        Skip
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-
-      {/* File caption */}
-      <div className="flex items-center justify-between mt-3">
-        <p className="font-mono text-[12px] text-inkMuted truncate max-w-[60ch]">
-          {currentImage?.file_name}
-        </p>
-        <p className="font-mono text-[11px] text-inkMuted tabular-nums">
-          #{String(state.currentIndex + 1).padStart(3, '0')} / {images.length}
-        </p>
-      </div>
-
-      {/* Choice buttons */}
-      <div className="mt-4">
+        {/* Choice buttons — panel variant: vertical stack on lg+,
+            2x2 grid on mobile, description hidden on mobile so the
+            four cards fit. */}
         <ChoiceGrid
+          variant="panel"
           current={currentImage ? state.annotations[currentImage.id] : undefined}
           onSelect={onSelect}
           reduceMotion={!!reduce}
         />
-      </div>
 
-      {/* Save state row */}
-      <div className="mt-3 min-h-[20px]" aria-live="polite" aria-atomic="true">
-        <SaveStateRow
-          status={state.status}
-          lastError={state.lastError}
-          showSavedAt={state.showSavedAt}
-          onRetry={() => {
-            if (currentImage && state.annotations[currentImage.id]) {
-              void sendSave(currentImage.id, state.annotations[currentImage.id]);
-            }
-          }}
-        />
-      </div>
-
-      {/* Navigation */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mt-5">
-        <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => dispatch({ type: 'navigate', direction: 'prev' })}
-            disabled={state.currentIndex === 0}
-            aria-label="Previous image"
-          >
-            <ChevronLeft size={14} strokeWidth={1.5} />
-            Prev
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => dispatch({ type: 'navigate', direction: 'next' })}
-            disabled={state.currentIndex >= images.length - 1}
-            aria-label="Next image"
-          >
-            Next
-            <ChevronRight size={14} strokeWidth={1.5} />
-          </Button>
-        </div>
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => dispatch({ type: 'toggle_auto_advance' })}
-            className="inline-flex items-center gap-2 catalogue text-inkMuted hover:text-ink"
-            aria-pressed={state.autoAdvance}
-          >
-            <span
-              className={cn(
-                'inline-block w-7 h-[14px] border rounded-full relative transition-colors',
-                state.autoAdvance ? 'border-vermilion bg-vermilion' : 'border-ink/40'
-              )}
-            >
-              <motion.span
-                className="absolute top-[1px] w-[10px] h-[10px] rounded-full"
-                initial={false}
-                animate={{
-                  left: state.autoAdvance ? '15px' : '1px',
-                  backgroundColor: state.autoAdvance ? 'rgb(var(--paper))' : 'rgb(var(--ink))',
-                }}
-                transition={{ duration: 0.18, ease: [0.2, 0.7, 0.2, 1] }}
-              />
-            </span>
-            Auto-advance
-          </button>
-          <button
-            onClick={() => {
-              // Inline jump: scan annotations starting at currentIndex + 1.
-              const from = state.currentIndex + 1;
-              let target = -1;
-              for (let i = from; i < images.length; i++) {
-                if (!state.annotations[images[i].id]) { target = i; break; }
-              }
-              if (target < 0) {
-                for (let i = 0; i < from; i++) {
-                  if (!state.annotations[images[i].id]) { target = i; break; }
-                }
-              }
-              if (target >= 0 && target !== state.currentIndex) {
-                dispatch({ type: 'jump', index: target });
+        {/* Save state row */}
+        <div className="min-h-[18px]" aria-live="polite" aria-atomic="true">
+          <SaveStateRow
+            status={state.status}
+            lastError={state.lastError}
+            showSavedAt={state.showSavedAt}
+            onRetry={() => {
+              if (currentImage && state.annotations[currentImage.id]) {
+                void sendSave(currentImage.id, state.annotations[currentImage.id]);
               }
             }}
-            className="inline-flex items-center gap-1.5 catalogue text-inkMuted hover:text-ink"
+          />
+        </div>
+
+        {/*
+          "N images still unmarked" prompt. Shown only when the user is
+          sitting on the LAST image, has marked it, and there are still
+          unannotated images elsewhere in the volume. We don't auto-
+          advance past the end (the index must never go out of range),
+          so we surface a calm hand-off instead.
+        */}
+        {state.currentIndex === lastIndex &&
+          !isComplete &&
+          state.status === 'saved' &&
+          currentImage &&
+          state.annotations[currentImage.id] && (
+            <div
+              data-testid="still-unmarked-prompt"
+              className="flex flex-wrap items-center justify-between gap-2 border border-ink/15 bg-cardBg px-3 py-2 rounded-sm"
+            >
+              <p className="font-sans text-[12.5px] text-inkMuted">
+                <span className="font-medium text-ink tabular-nums">
+                  {images.length - annotatedCount}
+                </span>{' '}
+                {images.length - annotatedCount === 1
+                  ? 'image is still unmarked'
+                  : 'images are still unmarked'}
+                .
+              </p>
+              <button
+                onClick={() => {
+                  // Scan from the start; first unannotated wins. (We're
+                  // sitting on the last image, so wrapping from current+1
+                  // would just put us back here.)
+                  for (let i = 0; i < images.length; i++) {
+                    if (!state.annotations[images[i].id]) {
+                      goTo(i);
+                      return;
+                    }
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-widerish text-vermilion hover:text-ink"
+              >
+                Jump to first unannotated →
+              </button>
+            </div>
+          )}
+
+        {/* Navigation: Prev / Next */}
+        <div className="flex items-center gap-2">
+          <BoundaryNudge
+            which="first"
+            active={state.boundaryCue.which === 'first'}
+            reduce={!!reduce}
           >
-            Jump to first unannotated →
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => goTo(state.currentIndex - 1)}
+              disabled={state.currentIndex === 0}
+              aria-label="Previous image"
+            >
+              <ChevronLeft size={14} strokeWidth={1.5} />
+              Prev
+            </Button>
+          </BoundaryNudge>
+          <BoundaryNudge
+            which="last"
+            active={state.boundaryCue.which === 'last'}
+            reduce={!!reduce}
+          >
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => goTo(state.currentIndex + 1)}
+              disabled={state.currentIndex >= lastIndex}
+              aria-label="Next image"
+            >
+              Next
+              <ChevronRight size={14} strokeWidth={1.5} />
+            </Button>
+          </BoundaryNudge>
+        </div>
+
+        {/* Auto-advance toggle */}
+        <button
+          onClick={() => dispatch({ type: 'toggle_auto_advance' })}
+          className="inline-flex items-center gap-2 catalogue text-inkMuted hover:text-ink self-start"
+          aria-pressed={state.autoAdvance}
+        >
+          <span
+            className={cn(
+              'inline-block w-7 h-[14px] border rounded-full relative transition-colors',
+              state.autoAdvance ? 'border-vermilion bg-vermilion' : 'border-ink/40'
+            )}
+          >
+            <motion.span
+              className="absolute top-[1px] w-[10px] h-[10px] rounded-full"
+              initial={false}
+              animate={{
+                left: state.autoAdvance ? '15px' : '1px',
+                backgroundColor: state.autoAdvance ? 'rgb(var(--paper))' : 'rgb(var(--ink))',
+              }}
+              transition={{ duration: 0.18, ease: [0.2, 0.7, 0.2, 1] }}
+            />
+          </span>
+          Auto-advance
+        </button>
+
+        {/* Jump to first unannotated */}
+        <button
+          onClick={() => {
+            // Inline jump: scan annotations starting at currentIndex + 1.
+            // We route through goTo so the reducer can clamp and
+            // clear boundaryCue. If everything after the cursor is
+            // annotated, wrap to the first unannotated before the
+            // cursor; if there's nothing at all, no-op.
+            const from = state.currentIndex + 1;
+            let target = -1;
+            for (let i = from; i < images.length; i++) {
+              if (!state.annotations[images[i].id]) { target = i; break; }
+            }
+            if (target < 0) {
+              for (let i = 0; i < from; i++) {
+                if (!state.annotations[images[i].id]) { target = i; break; }
+              }
+            }
+            if (target >= 0 && target !== state.currentIndex) {
+              goTo(target);
+            }
+          }}
+          className="inline-flex items-center gap-1.5 catalogue text-inkMuted hover:text-ink self-start"
+        >
+          Jump to first unannotated →
+        </button>
+
+        {/* Footer: keyboard hint + "How to annotate" link */}
+        <div className="catalogue text-inkMuted flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 border-t border-ink/10 mt-1">
+          <span className="flex items-center gap-1.5">
+            <Keyboard size={11} strokeWidth={1.5} />
+            <span>1–4 to mark, ← / → to navigate, j / k also work (j back, k forward).</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setGuidelinesOpenTrigger((n) => n + 1)}
+            className="inline-flex items-center gap-1.5 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-vermilion rounded-sm"
+          >
+            <BookOpen size={11} strokeWidth={1.5} />
+            <span>How to annotate</span>
           </button>
         </div>
-      </div>
-
-      {/* Progress rail */}
-      <div className="mt-5">
-        <ProgressRail
-          images={images}
-          annotations={state.annotations}
-          currentIndex={state.currentIndex}
-          onJump={(i) => dispatch({ type: 'jump', index: i })}
-        />
-      </div>
-
-      {/* Keyboard hint */}
-      <div className="catalogue text-inkMuted flex flex-wrap items-center gap-x-4 gap-y-1 mt-3">
-        <span className="flex items-center gap-1.5">
-          <Keyboard size={11} strokeWidth={1.5} />
-          <span>1–4 to mark, ← / → to navigate, j / k also work.</span>
-        </span>
-        <button
-          type="button"
-          onClick={() => setGuidelinesOpenTrigger((n) => n + 1)}
-          className="inline-flex items-center gap-1.5 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-vermilion rounded-sm"
-        >
-          <BookOpen size={11} strokeWidth={1.5} />
-          <span>How to annotate</span>
-        </button>
-      </div>
+      </aside>
 
       {/* First-visit + on-demand guidance modal */}
       <GuidelinesModal
@@ -642,7 +782,9 @@ function AnnotatorImage({
   onLoad: () => void;
   onError: () => void;
 }) {
-  // Per-image state, isolated by `imageId` reset on the next effect.
+  // `loaded` drives the CSS data-loaded attribute. We do NOT use it
+  // to gate mount — the <img> is always rendered, the skeleton is a
+  // sibling that is unmounted when not needed.
   const [loaded, setLoaded] = useState(false);
   const [showSpinner, setShowSpinner] = useState(false);
   // Bumping the URL forces the browser to bypass HTTP cache once.
@@ -655,12 +797,54 @@ function AnnotatorImage({
   const imageIdRef = useRef(imageId);
   imageIdRef.current = imageId;
 
-  // Reset state for the new image. We do NOT trust onLoad alone —
-  // if the image is already in the browser cache and the page
-  // reloaded, the browser may have fired `load` before React
-  // hydrated, so onLoad never reaches us. We re-check `complete`
-  // synchronously via a ref callback and via a layout effect.
+  // The ref callback is invoked synchronously when React attaches the
+  // <img> to the DOM. If the image is already complete (cached /
+  // already loaded before hydration), we flip `loaded` immediately.
+  // This is the most reliable path for the bug the user reported:
+  // onLoad can fire before React hydrates and attach the listener, so
+  // we also detect that case here.
+  //
+  // IMPORTANT: the ref callback must be stable across renders, otherwise
+  // React detaches and re-attaches the ref every render → infinite
+  // re-render loop. We hold the latest onLoad/onError in refs and
+  // read them in the callback without making them dependencies.
+  const onLoadRef = useRef(onLoad);
+  const onErrorRef = useRef(onError);
+  onLoadRef.current = onLoad;
+  onErrorRef.current = onError;
+  const setImgRef = useCallback((el: HTMLImageElement | null) => {
+    imgRef.current = el;
+    if (!el) return;
+    if (el.complete && el.naturalWidth > 0) {
+      setLoaded(true);
+      onLoadRef.current();
+    }
+  }, []);
+
+  // Reset state for a new image. Runs on mount AND whenever imageId
+  // changes (which, because of `key={imageId}` on the parent, means
+  // it runs on every navigation).
+  //
+  // Important: this runs AFTER the ref callback and the layout
+  // effect, so if either of them has already flipped `loaded` to
+  // true (because the image was in the browser cache and was
+  // complete at commit time), we must NOT clobber it. We check
+  // `imgRef.current.complete && naturalWidth > 0` before resetting.
   useEffect(() => {
+    const el = imgRef.current;
+    const alreadyLoaded = !!(el && el.complete && el.naturalWidth > 0);
+    if (alreadyLoaded) {
+      // Don't reset — the ref callback or layout effect already
+      // marked this image as loaded. Still start the watchdog in
+      // case of a hang.
+      const t = setTimeout(() => {
+        const e = imgRef.current;
+        if (e && (!e.complete || e.naturalWidth === 0)) {
+          setCacheBust((b) => (b === 0 ? 1 : b));
+        }
+      }, WATCHDOG_MS);
+      return () => clearTimeout(t);
+    }
     setLoaded(false);
     setShowSpinner(false);
     setCacheBust(0);
@@ -672,32 +856,18 @@ function AnnotatorImage({
     return () => clearTimeout(t);
   }, [imageId]);
 
-  // If the image finished loading (cached + already complete) before
-  // our useEffect ran, catch it here. useLayoutEffect runs after the
-  // DOM is committed but before the browser paints, so we can flip
-  // `loaded` synchronously and avoid a one-frame flash of the skeleton.
+  // Belt-and-suspenders layout effect: if the ref callback ran before
+  // the image had a chance to complete, or if the image became
+  // complete between ref-callback and effect (very rare), catch it
+  // here. useLayoutEffect runs after the DOM is committed but before
+  // the browser paints.
   useLayoutEffect(() => {
     const el = imgRef.current;
     if (!el) return;
-    if (el.complete) {
-      if (el.naturalWidth > 0) {
-        if (process.env.NODE_ENV !== 'production') {
-          // eslint-disable-next-line no-console
-          console.debug('[AnnotatorImage] already-complete', imageIdRef.current);
-        }
-        setLoaded(true);
-        onLoad();
-      } else {
-        if (process.env.NODE_ENV !== 'production') {
-          // eslint-disable-next-line no-console
-          console.debug('[AnnotatorImage] already-error', imageIdRef.current);
-        }
-        setLoaded(false);
-        onError();
-      }
+    if (el.complete && el.naturalWidth > 0 && !loaded) {
+      setLoaded(true);
+      onLoadRef.current();
     }
-    // Intentionally only run on imageId change — we don't want to
-    // re-run on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageId, cacheBust]);
 
@@ -722,7 +892,7 @@ function AnnotatorImage({
           console.debug('[AnnotatorImage] watchdog fail', id);
         }
         setLoaded(false);
-        onError();
+        onErrorRef.current();
       }
     }, WATCHDOG_MS);
     return () => clearTimeout(t);
@@ -735,9 +905,24 @@ function AnnotatorImage({
       : `${imageProxyUrl(imageId)}&t=${Date.now()}`;
 
   return (
-    <>
+    <div
+      data-testid="annotator-image"
+      data-loaded={loaded ? 'true' : 'false'}
+      data-image-id={imageId}
+      className="absolute inset-0"
+    >
+      {/*
+        Sibling skeleton: mounted only while !loaded, UNMOUNTED otherwise.
+        We do NOT use CSS to hide it (e.g. opacity-0) — it gets removed
+        from the tree so the next image can mount its own skeleton
+        cleanly with `key={image.id}` and not inherit any
+        animation/transition state.
+      */}
       {!loaded && (
-        <div className="absolute inset-0 w-full h-full">
+        <div
+          data-testid="annotator-skeleton"
+          className="absolute inset-0 w-full h-full"
+        >
           <Skeleton className="absolute inset-0 w-full h-full" />
           {showSpinner && (
             <div className="absolute inset-0 flex items-center justify-center text-inkMuted">
@@ -751,10 +936,16 @@ function AnnotatorImage({
           )}
         </div>
       )}
+      {/*
+        The image is ALWAYS in the DOM. Visibility is driven by a
+        CSS opacity transition keyed off data-loaded. We never
+        gate the img on a JS animation; the className `opacity-100` /
+        `opacity-0` plus the data-loaded attribute are the only sources
+        of truth.
+      */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        ref={imgRef}
-        key={imageId}
+        ref={setImgRef}
         src={src}
         alt={`Image for annotation, file ${fileName}. Use the buttons below to mark it.`}
         loading="eager"
@@ -769,7 +960,7 @@ function AnnotatorImage({
             console.debug('[AnnotatorImage] load', imageIdRef.current);
           }
           setLoaded(true);
-          onLoad();
+          onLoadRef.current();
         }}
         onError={() => {
           if (process.env.NODE_ENV !== 'production') {
@@ -777,14 +968,15 @@ function AnnotatorImage({
             console.debug('[AnnotatorImage] error', imageIdRef.current);
           }
           setLoaded(false);
-          onError();
+          onErrorRef.current();
         }}
         className={cn(
-          'absolute inset-0 w-full h-full object-contain transition-opacity duration-200 select-none',
+          'absolute inset-0 w-full h-full object-contain select-none',
+          'transition-opacity duration-200 ease-notebook',
           loaded ? 'opacity-100' : 'opacity-0'
         )}
       />
-    </>
+    </div>
   );
 }
 
@@ -838,10 +1030,19 @@ function ChoiceGrid({
   current,
   onSelect,
   reduceMotion,
+  variant = 'grid',
 }: {
   current: HarmSource | undefined;
   onSelect: (h: HarmSource) => void;
   reduceMotion: boolean;
+  /**
+   * 'grid' (default): the original 2-col on mobile / 4-col on lg layout
+   * with full descriptions.
+   * 'panel': a compact layout for the side panel — vertical stack on
+   * lg+, 2x2 on mobile, with the description text hidden on mobile so
+   * the four cards fit without scrolling.
+   */
+  variant?: 'grid' | 'panel';
 }) {
   // WAI-ARIA radiogroup: ←/→/↑/↓ move between radios, Home/End jump to
   // first/last. Space/Enter activates (handled by the button).
@@ -880,12 +1081,21 @@ function ChoiceGrid({
     }
   };
 
+  const isPanel = variant === 'panel';
+  // 'grid' keeps the original 2-col mobile / 4-col lg layout.
+  // 'panel' uses 2-col on mobile (description hidden) and a vertical
+  // stack (1-col) on lg+ with the description visible below the
+  // number/label row.
+  const containerClass = isPanel
+    ? 'grid grid-cols-2 lg:grid-cols-1 gap-2'
+    : 'grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3';
+
   return (
     <div
       role="radiogroup"
       aria-label="Mark this image"
       onKeyDown={onKeyDown}
-      className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3"
+      className={containerClass}
     >
       {CHOICES.map((c) => {
         const selected = current === c.harm;
@@ -899,59 +1109,127 @@ function ChoiceGrid({
             whileTap={reduceMotion ? undefined : { scale: 0.98, y: 1 }}
             transition={{ type: 'spring', stiffness: 600, damping: 30 }}
             className={cn(
-              'btn-touch relative w-full text-left px-3.5 sm:px-4 py-3 sm:py-3.5',
-              'border rounded-sm flex flex-col gap-1.5 transition-colors duration-150 ease-notebook',
-              selected
-                ? c.tone === 'vermilion'
-                  ? 'bg-vermilion text-paper border-vermilion'
-                  : 'bg-olive text-paper border-olive'
-                : 'bg-cardBg text-ink border-ink/25 hover:border-ink'
+              // Card itself: CSS grid with [number badge | content].
+              // Padding 12-14px, gap 4-6px, no fixed height, so the
+              // card grows with its content. min-width:0 on the
+              // content column so the description can wrap.
+              isPanel
+                ? cn(
+                    'btn-touch relative w-full text-left rounded-sm',
+                    'border transition-colors duration-150 ease-notebook',
+                    'grid grid-cols-[28px_minmax(0,1fr)] items-start gap-x-2 px-3 py-3',
+                    selected
+                      ? c.tone === 'vermilion'
+                        ? 'bg-vermilion text-paperStrong border-vermilion'
+                        : 'bg-olive dark:bg-oliveBright text-paperStrong border-olive dark:border-oliveBright'
+                      : 'bg-cardBg text-ink border-ink/25 hover:border-ink'
+                  )
+                : cn(
+                    'btn-touch relative w-full text-left px-3.5 sm:px-4 py-3 sm:py-3.5',
+                    'border rounded-sm flex flex-col gap-1.5 transition-colors duration-150 ease-notebook',
+                    selected
+                      ? c.tone === 'vermilion'
+                        ? 'bg-vermilion text-paperStrong border-vermilion'
+                        : 'bg-olive dark:bg-oliveBright text-paperStrong border-olive dark:border-oliveBright'
+                      : 'bg-cardBg text-ink border-ink/25 hover:border-ink'
+                  )
             )}
           >
-            <div className="flex items-center justify-between">
-              <span
-                className={cn(
-                  'inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-widerish',
-                  selected ? 'text-paper/80' : 'text-inkMuted'
-                )}
-              >
+            {isPanel ? (
+              <>
+                {/* Column 1: number badge — fixed 28px square, no shrink. */}
                 <span
                   className={cn(
-                    'inline-flex items-center justify-center w-5 h-5 border',
+                    'inline-flex items-center justify-center w-[22px] h-[22px] mt-0.5 border font-mono text-[10px] uppercase',
                     selected
-                      ? 'border-paper/70 text-paper'
+                      ? 'border-paperStrong/70 text-paperStrong'
                       : 'border-ink/40 text-ink'
                   )}
                 >
                   {c.key}
                 </span>
-                <span className="inline-flex items-center gap-1.5">
-                  {c.icon}
-                  <span className="font-sans text-[14px] font-medium normal-case tracking-normal">
-                    {c.label}
+                {/* Column 2: content — flex column, min-w-0 so the
+                    description can wrap inside the panel width. */}
+                <div className="flex flex-col gap-1 min-w-0">
+                  {/* Row 1: icon + label + (optional check). The
+                      check is right-aligned inside this row. */}
+                  <div className="flex items-center justify-between gap-2 min-w-0">
+                    <span className="inline-flex items-center gap-1.5 min-w-0 font-sans text-[14px] font-medium">
+                      <span className="shrink-0">{c.icon}</span>
+                      <span className="truncate">{c.label}</span>
+                    </span>
+                    {selected && (
+                      <motion.span
+                        initial={reduceMotion ? false : { scale: 0.6, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ type: 'spring', stiffness: 500, damping: 24 }}
+                        className="inline-flex items-center justify-center w-5 h-5 shrink-0"
+                        aria-hidden
+                      >
+                        <Check size={14} strokeWidth={2} />
+                      </motion.span>
+                    )}
+                  </div>
+                  {/* Row 2: description (lg only in panel variant) —
+                      normal flow, no absolute positioning, wraps. */}
+                  <p
+                    className={cn(
+                      'hidden lg:block text-[12.5px] leading-snug min-w-0 break-words',
+                      selected ? 'text-paperStrong/90' : 'text-inkMuted'
+                    )}
+                  >
+                    {c.description}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-widerish',
+                      selected ? 'text-paperStrong/85' : 'text-inkMuted'
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'inline-flex items-center justify-center w-5 h-5 border',
+                        selected
+                          ? 'border-paperStrong/70 text-paperStrong'
+                          : 'border-ink/40 text-ink'
+                      )}
+                    >
+                      {c.key}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                      {c.icon}
+                      <span className="font-sans text-[14px] font-medium normal-case tracking-normal">
+                        {c.label}
+                      </span>
+                    </span>
                   </span>
-                </span>
-              </span>
-              {selected && (
-                <motion.span
-                  initial={reduceMotion ? false : { scale: 0.6, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  transition={{ type: 'spring', stiffness: 500, damping: 24 }}
-                  className="inline-flex items-center justify-center w-5 h-5"
-                  aria-hidden
+                  {selected && (
+                    <motion.span
+                      initial={reduceMotion ? false : { scale: 0.6, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 24 }}
+                      className="inline-flex items-center justify-center w-5 h-5"
+                      aria-hidden
+                    >
+                      <Check size={14} strokeWidth={2} />
+                    </motion.span>
+                  )}
+                </div>
+                <p
+                  className={cn(
+                    'text-[12.5px] leading-snug',
+                    selected ? 'text-paperStrong/90' : 'text-inkMuted'
+                  )}
                 >
-                  <Check size={14} strokeWidth={2} />
-                </motion.span>
-              )}
-            </div>
-            <p
-              className={cn(
-                'text-[12.5px] leading-snug',
-                selected ? 'text-paper/85' : 'text-inkMuted'
-              )}
-            >
-              {c.description}
-            </p>
+                  {c.description}
+                </p>
+              </>
+            )}
           </motion.button>
         );
       })}
@@ -1010,60 +1288,6 @@ function SaveStateRow({
   }
 
   return <span aria-hidden className="block h-[18px]" />;
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Progress rail                                                             */
-/* -------------------------------------------------------------------------- */
-
-function ProgressRail({
-  images,
-  annotations,
-  currentIndex,
-  onJump,
-}: {
-  images: ImageRow[];
-  annotations: Record<string, HarmSource>;
-  currentIndex: number;
-  onJump: (i: number) => void;
-}) {
-  return (
-    <div className="border border-ink/15 bg-cardBg rounded-sm px-2.5 py-2.5">
-      <p className="catalogue text-inkMuted mb-1.5">
-        progress — click any tile to jump
-      </p>
-      <div
-        role="list"
-        aria-label="Annotation progress"
-        className="flex items-center gap-1 flex-wrap"
-      >
-        {images.map((img, i) => {
-          const annotated = !!annotations[img.id];
-          const current = i === currentIndex;
-          return (
-            <button
-              key={img.id}
-              role="listitem"
-              onClick={() => onJump(i)}
-              title={img.file_name}
-              aria-current={current ? 'true' : undefined}
-              aria-label={`Image ${i + 1} of ${images.length}: ${img.file_name}${
-                annotated ? ' (marked)' : ' (unmarked)'
-              }${current ? ', current' : ''}`}
-              className={cn(
-                'h-3.5 w-3.5 border rounded-sm transition-colors',
-                current
-                  ? 'border-vermilion bg-vermilion'
-                  : annotated
-                  ? 'border-olive bg-olive'
-                  : 'border-ink/20 bg-ink/[0.06] hover:border-ink/50'
-              )}
-            />
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1126,5 +1350,59 @@ function CompletionScreen({
         </p>
       </motion.div>
     </section>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  BoundaryNudge                                                             */
+/*                                                                            */
+/*  A tiny motion-aware wrapper used around the Prev / Next buttons. When     */
+/*  `active` is true (the reducer just set boundaryCue for this side), it    */
+/*  plays a brief horizontal shake. Under reduced motion it's a no-op.        */
+/*                                                                            */
+/*  The wrapper does not own the button — it only decorates the visual        */
+/*  response. Keyboard / pointer events bubble through to the inner button.   */
+/* -------------------------------------------------------------------------- */
+
+function BoundaryNudge({
+  which,
+  active,
+  reduce,
+  children,
+}: {
+  which: 'first' | 'last';
+  active: boolean;
+  reduce: boolean;
+  children: React.ReactNode;
+}) {
+  // No-op pass-through under reduced motion, or when the cue isn't
+  // active. We avoid rendering a framer-motion wrapper at all in
+  // those cases so the layout is bit-for-bit identical to the
+  // pre-refactor render.
+  if (reduce || !active) {
+    return <>{children}</>;
+  }
+  // A small horizontal shake. The direction is opposite for "first"
+  // vs "last" so the motion agrees with the user intent (trying to
+  // go further left from the first image = nudge right; trying to
+  // go further right from the last = nudge left).
+  const keyframes =
+    which === 'first'
+      ? { x: [0, 3, -3, 2, -1, 0] }
+      : { x: [0, -3, 3, -2, 1, 0] };
+  return (
+    <motion.span
+      className="inline-flex"
+      // `key` is derived from the cue timestamp via the active flag
+      // (the parent re-renders, which resets the span). Force a
+      // remount on each activation by changing the key. Since the
+      // parent re-renders, the timestamp is stable within a single
+      // activation, so this plays exactly once per cue.
+      animate={keyframes}
+      transition={{ duration: 0.32, ease: [0.2, 0.7, 0.2, 1] }}
+      aria-hidden
+    >
+      {children}
+    </motion.span>
   );
 }
