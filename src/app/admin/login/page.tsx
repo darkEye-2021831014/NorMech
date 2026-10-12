@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { getSession } from '@/lib/session';
+import { Logo } from '@/components/Logo';
+import { siteName } from '@/config/brand';
 import { AdminLoginForm } from './LoginForm';
 
 // Server component. If the visitor is already signed in, skip the
@@ -19,11 +21,19 @@ export default async function AdminLoginPage() {
     <main className="min-h-screen relative flex flex-col">
       <header className="border-b border-ink/15">
         <div className="max-w-[1280px] mx-auto px-6 md:px-10 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <span className="catalogue">M.A.</span>
-            <span className="hidden sm:inline-block w-12 h-px bg-ink/30" aria-hidden />
+          <Link
+            href="/"
+            prefetch={false}
+            className="inline-flex items-center gap-2.5 min-w-0"
+            aria-label={`${siteName} home`}
+          >
+            <Logo size={18} className="text-ink shrink-0" />
+            <span className="font-display text-[15px] leading-none tracking-tightish text-ink truncate">
+              {siteName}
+            </span>
+            <span className="hidden sm:inline-block w-3 h-px bg-ink/20" aria-hidden />
             <span className="catalogue text-vermilion dark:text-vermilionBright">— Administrator</span>
-          </div>
+          </Link>
           <Link
             href="/"
             prefetch={false}
@@ -41,8 +51,10 @@ export default async function AdminLoginPage() {
 
       <footer className="border-t border-ink/15">
         <div className="max-w-[1280px] mx-auto px-6 md:px-10 py-4 flex items-center justify-between">
+          <p className="font-mono text-[10.5px] tracking-widerish text-inkMuted">
+            {siteName} · for research use
+          </p>
           <p className="catalogue text-inkMuted">Admin sign in</p>
-          <p className="catalogue text-inkMuted">MMXXVI</p>
         </div>
       </footer>
     </main>

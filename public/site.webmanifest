@@ -1,12 +1,12 @@
 {
-  "name": "Meme Annotator",
-  "short_name": "M. A.",
-  "description": "A scholarly instrument for the close annotation of meme imagery.",
+  "name": "Marginalia",
+  "short_name": "Marginalia",
+  "description": "Marginalia — a research annotation platform. Meme annotation study.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f5f1e8",
-  "theme_color": "#f5f1e8",
+  "background_color": "#f4efe6",
+  "theme_color": "#f4efe6",
   "icons": [
     {
       "src": "/icon.svg",
@@ -15,7 +15,7 @@
       "purpose": "any"
     },
     {
-      "src": "/apple-touch-icon.png",
+      "src": "/apple-icon.png",
       "sizes": "180x180",
       "type": "image/png"
     }

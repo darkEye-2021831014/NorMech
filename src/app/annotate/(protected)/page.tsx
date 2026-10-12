@@ -22,6 +22,7 @@ export default async function AnnotatorDashboardPage() {
     <AnnotatorClient
       datasetName={state.dataset.name}
       userName={session.name ?? 'Reader'}
+      datasetId={state.dataset.id}
       images={state.images}
       initialAnnotations={state.annotations}
       startIndex={startIndex}

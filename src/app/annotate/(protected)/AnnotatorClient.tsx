@@ -27,6 +27,7 @@ import {
   Keyboard,
   AlertTriangle,
   BookOpen,
+  Hash,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
@@ -37,6 +38,7 @@ import type { HarmSource, ImageRow } from '@/lib/annotator-actions';
 interface Props {
   datasetName: string;
   userName: string;
+  datasetId: string;
   images: ImageRow[];
   initialAnnotations: Record<string, HarmSource>;
   startIndex: number;
@@ -202,6 +204,7 @@ function reducer(state: State, action: Action): State {
 export function AnnotatorClient({
   datasetName,
   userName,
+  datasetId,
   images,
   initialAnnotations,
   startIndex,
@@ -237,6 +240,42 @@ export function AnnotatorClient({
     }
   }, []);
 
+  // ---------------------------------------------------------------------
+  // Furthest-viewed index. Used to classify tiles as `skipped`
+  // (not annotated AND index < max(furthestViewedIndex,
+  // lastAnnotatedIndex)). Persisted to localStorage per dataset;
+  // the whole block is wrapped in try/catch so storage failures
+  // (private mode, quota, sandboxed iframes) fall back to in-memory
+  // only without breaking the page.
+  // ---------------------------------------------------------------------
+  const [furthestViewedIndex, setFurthestViewedIndex] = useState(0);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`marginalia-annotator-furthest:${datasetId}`);
+      const n = raw == null ? 0 : parseInt(raw, 10);
+      if (Number.isFinite(n) && n >= 0) {
+        setFurthestViewedIndex(Math.min(n, Math.max(0, images.length - 1)));
+      }
+    } catch {
+      /* in-memory fallback only */
+    }
+    // datasetId and images.length are stable for the lifetime of
+    // this view; intentionally only on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    setFurthestViewedIndex((prev) => {
+      const next = Math.max(prev, state.currentIndex);
+      if (next === prev) return prev;
+      try {
+        localStorage.setItem(`marginalia-annotator-furthest:${datasetId}`, String(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, [state.currentIndex, datasetId]);
+
   // Refs that mirror state for use in async callbacks without
   // re-subscribing.
   const stateRef = useRef(state);
@@ -249,6 +288,40 @@ export function AnnotatorClient({
   );
   const isComplete = images.length > 0 && annotatedCount === images.length;
   const lastIndex = Math.max(0, images.length - 1);
+
+  // Per-image status used by the progress map. For each index:
+  //   marked   — has an annotation
+  //   skipped  — not annotated AND index < cutoff (the user moved
+  //              past it; cutoff is the max of furthestViewedIndex
+  //              and the highest annotated index)
+  //   pending  — not annotated AND not yet past
+  //   current  — index === currentIndex (combined with the above)
+  const cutoff = useMemo(() => {
+    let lastAnn = -1;
+    for (let i = 0; i < images.length; i++) {
+      if (state.annotations[images[i].id]) lastAnn = i;
+    }
+    return Math.max(furthestViewedIndex, lastAnn);
+  }, [furthestViewedIndex, state.annotations, images]);
+
+  const statusByIndex = useMemo(() => {
+    const arr: ('marked' | 'skipped' | 'pending')[] = new Array(images.length);
+    for (let i = 0; i < images.length; i++) {
+      if (state.annotations[images[i].id]) {
+        arr[i] = 'marked';
+      } else if (i < cutoff) {
+        arr[i] = 'skipped';
+      } else {
+        arr[i] = 'pending';
+      }
+    }
+    return arr;
+  }, [images, state.annotations, cutoff]);
+
+  const skippedCount = useMemo(
+    () => statusByIndex.filter((s) => s === 'skipped').length,
+    [statusByIndex]
+  );
 
   // The single navigation primitive. All paths (Next/Prev buttons,
   // ArrowLeft/Right, J/K, progress rail, "Jump to first unannotated",
@@ -420,8 +493,6 @@ export function AnnotatorClient({
     return <CompletionScreen datasetName={datasetName} userName={userName} />;
   }
 
-  const progressPct = images.length === 0 ? 0 : (annotatedCount / images.length) * 100;
-
   return (
     <section
       data-testid="annotator-page"
@@ -559,25 +630,6 @@ export function AnnotatorClient({
           header. min-h-0 on a flex item is what unlocks
           overflow-y-auto inside it. */}
       <aside className="flex flex-col gap-2 shrink-0 w-full lg:w-[340px] lg:h-full lg:min-h-0 lg:overflow-y-auto pt-2 lg:pt-1">
-        {/* Thin progress line — 1px hairline at the very top of the
-            panel. Replaces the old full-width progress bar + the
-            duplicate "X of N marked" counter (the chrome already
-            shows the same number in the header). */}
-        <div
-          className="h-px w-full bg-ink/10 overflow-hidden"
-          role="progressbar"
-          aria-valuenow={annotatedCount}
-          aria-valuemin={0}
-          aria-valuemax={images.length}
-        >
-          <motion.div
-            className="h-full bg-vermilion"
-            initial={false}
-            animate={{ width: `${progressPct}%` }}
-            transition={{ duration: reduce ? 0 : 0.35, ease: [0.2, 0.7, 0.2, 1] }}
-          />
-        </div>
-
         {/* Choice buttons — panel variant: vertical stack on lg+,
             2x2 grid on mobile, description hidden on mobile so the
             four cards fit. */}
@@ -585,6 +637,23 @@ export function AnnotatorClient({
           variant="panel"
           current={currentImage ? state.annotations[currentImage.id] : undefined}
           onSelect={onSelect}
+          reduceMotion={!!reduce}
+        />
+
+        {/* Progress map: the source of truth for "where is the user
+            in the volume". Lives between the choices and the
+            Prev/Next row. flex-1 + min-h-0 so it absorbs whatever
+            vertical space the panel has — the page itself never
+            scrolls because the panel's overflow-y-auto catches any
+            overflow at this layer. */}
+        <ProgressMap
+          images={images}
+          statusByIndex={statusByIndex}
+          currentIndex={state.currentIndex}
+          annotations={state.annotations}
+          skippedCount={skippedCount}
+          annotatedCount={annotatedCount}
+          onJump={(idx) => goTo(idx)}
           reduceMotion={!!reduce}
         />
 
@@ -707,32 +776,59 @@ export function AnnotatorClient({
           Auto-advance
         </button>
 
-        {/* Jump to first unannotated */}
-        <button
-          onClick={() => {
-            // Inline jump: scan annotations starting at currentIndex + 1.
-            // We route through goTo so the reducer can clamp and
-            // clear boundaryCue. If everything after the cursor is
-            // annotated, wrap to the first unannotated before the
-            // cursor; if there's nothing at all, no-op.
-            const from = state.currentIndex + 1;
-            let target = -1;
-            for (let i = from; i < images.length; i++) {
-              if (!state.annotations[images[i].id]) { target = i; break; }
-            }
-            if (target < 0) {
-              for (let i = 0; i < from; i++) {
+        {/* Jump actions: "First unmarked" and (when applicable)
+            "Next skipped". Side by side, mono small caps. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <button
+            onClick={() => {
+              // Inline jump: scan annotations starting at currentIndex + 1.
+              // We route through goTo so the reducer can clamp and
+              // clear boundaryCue. If everything after the cursor is
+              // annotated, wrap to the first unannotated before the
+              // cursor; if there's nothing at all, no-op.
+              const from = state.currentIndex + 1;
+              let target = -1;
+              for (let i = from; i < images.length; i++) {
                 if (!state.annotations[images[i].id]) { target = i; break; }
               }
-            }
-            if (target >= 0 && target !== state.currentIndex) {
-              goTo(target);
-            }
-          }}
-          className="inline-flex items-center gap-1.5 catalogue text-inkMuted hover:text-ink self-start"
-        >
-          Jump to first unannotated →
-        </button>
+              if (target < 0) {
+                for (let i = 0; i < from; i++) {
+                  if (!state.annotations[images[i].id]) { target = i; break; }
+                }
+              }
+              if (target >= 0 && target !== state.currentIndex) {
+                goTo(target);
+              }
+            }}
+            className="inline-flex items-center gap-1.5 catalogue text-inkMuted hover:text-ink"
+          >
+            First unmarked →
+          </button>
+          {skippedCount > 0 && (
+            <button
+              onClick={() => {
+                // Next skipped: scan for the first `skipped` tile
+                // strictly after the current index; wrap if needed.
+                const from = state.currentIndex + 1;
+                let target = -1;
+                for (let i = from; i < statusByIndex.length; i++) {
+                  if (statusByIndex[i] === 'skipped') { target = i; break; }
+                }
+                if (target < 0) {
+                  for (let i = 0; i < from; i++) {
+                    if (statusByIndex[i] === 'skipped') { target = i; break; }
+                  }
+                }
+                if (target >= 0 && target !== state.currentIndex) {
+                  goTo(target);
+                }
+              }}
+              className="inline-flex items-center gap-1.5 catalogue text-vermilion dark:text-vermilionBright hover:underline"
+            >
+              Next skipped →
+            </button>
+          )}
+        </div>
 
         {/* Footer: keyboard hint + "How to annotate" link */}
         <div className="catalogue text-inkMuted flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 border-t border-ink/10 mt-1">
@@ -1354,6 +1450,200 @@ function CompletionScreen({
 }
 
 /* -------------------------------------------------------------------------- */
+/*  ProgressMap                                                               */
+/*                                                                            */
+/*  Tile grid showing every image in the volume with one of three states:     */
+/*  marked, skipped, pending. The current image gets a 2px accent ring.       */
+/*  Clicks jump to that image. Auto-scrolls the current tile into view.       */
+/*                                                                            */
+/*  The grid is wrapped in a `flex-1 min-h-0 overflow-y-auto` container so    */
+/*  it absorbs whatever vertical space the parent panel has, and the page     */
+/*  itself never scrolls. Designed for 1000+ images: lightweight buttons,     */
+/*  no per-tile animation libraries.                                          */
+/* -------------------------------------------------------------------------- */
+
+const PROGRESS_TILE_LETTER: Record<HarmSource, string> = {
+  text: 'T',
+  image: 'I',
+  both: 'B',
+  none: 'N',
+};
+
+const PROGRESS_TILE_TONE: Record<HarmSource, 'vermilion' | 'olive'> = {
+  text: 'vermilion',
+  image: 'vermilion',
+  both: 'vermilion',
+  none: 'olive',
+};
+
+function ProgressMap({
+  images,
+  statusByIndex,
+  currentIndex,
+  annotations,
+  skippedCount,
+  annotatedCount,
+  onJump,
+  reduceMotion,
+}: {
+  images: ImageRow[];
+  statusByIndex: ('marked' | 'skipped' | 'pending')[];
+  currentIndex: number;
+  annotations: Record<string, HarmSource>;
+  skippedCount: number;
+  annotatedCount: number;
+  onJump: (index: number) => void;
+  reduceMotion: boolean;
+}) {
+  // Refs to the per-tile buttons so we can auto-scroll the current
+  // one into view as the user navigates.
+  const tileRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  // Auto-scroll the current tile into view. `nearest` is the right
+  // behavior — we only scroll if the tile is actually outside the
+  // visible area, so a user navigating with the keyboard doesn't
+  // get a jolting full-scroll on every step.
+  useEffect(() => {
+    const el = tileRefs.current[currentIndex];
+    if (!el) return;
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [currentIndex]);
+
+  // Per-tile "just marked" flash. We compute this as a set of image
+  // ids that transitioned from non-marked to marked within the last
+  // 150ms — derived by comparing the current annotations to a small
+  // ref of the previous tick.
+  const prevMarkedRef = useRef<Set<string>>(new Set());
+  const [flash, setFlash] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const next = new Set(Object.keys(annotations));
+    const flashes: Record<string, number> = {};
+    for (const id of next) {
+      if (!prevMarkedRef.current.has(id)) flashes[id] = Date.now();
+    }
+    prevMarkedRef.current = next;
+    if (Object.keys(flashes).length > 0) {
+      setFlash((cur) => ({ ...cur, ...flashes }));
+      const t = setTimeout(() => {
+        setFlash((cur) => {
+          const cutoff = Date.now() - 200;
+          const out: Record<string, number> = {};
+          for (const k of Object.keys(cur)) if (cur[k] > cutoff) out[k] = cur[k];
+          return out;
+        });
+      }, 220);
+      return () => clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [annotations]);
+
+  const left = Math.max(0, images.length - annotatedCount);
+
+  return (
+    <div
+      data-testid="progress-map"
+      className="flex-1 min-h-0 flex flex-col gap-1.5 border-t border-ink/10 pt-2"
+    >
+      {/* Summary line. */}
+      <p className="font-mono text-[10.5px] tracking-widerish text-inkMuted flex items-center gap-1.5">
+        <Hash size={10} strokeWidth={1.5} aria-hidden />
+        <span>
+          <span className="text-ink tabular-nums">{annotatedCount}</span> marked
+          {skippedCount > 0 && (
+            <>
+              {' · '}
+              <span className="text-vermilion dark:text-vermilionBright tabular-nums">
+                {skippedCount}
+              </span>{' '}
+              skipped
+            </>
+          )}
+          {' · '}
+          <span className="text-ink tabular-nums">{left}</span> left
+        </span>
+      </p>
+
+      {/* Tile grid. flex-1 + min-h-0 + overflow-y-auto so the panel
+          scrolls inside itself if 1000+ tiles overflow. */}
+      <div
+        className="flex-1 min-h-0 overflow-y-auto"
+        role="list"
+        aria-label="Progress map"
+      >
+        <div
+          className="grid gap-1"
+          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(28px, 1fr))' }}
+        >
+          {images.map((img, i) => {
+            const status = statusByIndex[i];
+            const isCurrent = i === currentIndex;
+            const tone = status === 'marked' ? PROGRESS_TILE_TONE[annotations[img.id]] : null;
+            const letter = status === 'marked' ? PROGRESS_TILE_LETTER[annotations[img.id]] : null;
+            const isFlashing = !!flash[img.id];
+            return (
+              <motion.button
+                key={img.id}
+                ref={(el) => {
+                  tileRefs.current[i] = el;
+                }}
+                type="button"
+                role="listitem"
+                onClick={() => onJump(i)}
+                title={img.file_name}
+                aria-label={`Image ${i + 1}, ${status}`}
+                animate={
+                  !reduceMotion && isFlashing
+                    ? { scale: [1, 1.15, 1] }
+                    : { scale: 1 }
+                }
+                transition={{ duration: 0.15, ease: [0.2, 0.7, 0.2, 1] }}
+                className={cn(
+                  'relative inline-flex items-center justify-center',
+                  'w-full aspect-square font-mono text-[10px] tabular-nums rounded-sm',
+                  'transition-colors duration-150 ease-notebook',
+                  // Border styling.
+                  isCurrent
+                    ? 'ring-2 ring-vermilion ring-offset-1 ring-offset-paper dark:ring-offset-paper'
+                    : '',
+                  status === 'marked' && tone === 'vermilion'
+                    ? 'bg-vermilion text-paperStrong border border-vermilion'
+                    : status === 'marked' && tone === 'olive'
+                    ? 'bg-olive dark:bg-oliveBright text-paperStrong border border-olive dark:border-oliveBright'
+                    : status === 'skipped'
+                    ? 'border-[1.5px] border-vermilion text-vermilion bg-transparent'
+                    : 'border border-ink/25 text-inkMuted bg-transparent hover:border-ink/60'
+                )}
+              >
+                {status === 'marked' ? letter : status === 'skipped' ? '!' : i + 1}
+              </motion.button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Legend. Uses the same symbols as the tiles so the key is
+          unambiguous. */}
+      <p className="font-mono text-[10px] tracking-widerish text-inkMuted flex items-center gap-2.5">
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block w-3 h-3 bg-vermilion rounded-sm" aria-hidden />
+          marked
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center justify-center w-3 h-3 border-[1.5px] border-vermilion text-vermilion rounded-sm" aria-hidden>
+            <span className="text-[9px] leading-none">!</span>
+          </span>
+          skipped
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block w-3 h-3 border border-ink/30 rounded-sm" aria-hidden />
+          pending
+        </span>
+      </p>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /*  BoundaryNudge                                                             */
 /*                                                                            */
 /*  A tiny motion-aware wrapper used around the Prev / Next buttons. When     */
@@ -1363,7 +1653,6 @@ function CompletionScreen({
 /*  The wrapper does not own the button — it only decorates the visual        */
 /*  response. Keyboard / pointer events bubble through to the inner button.   */
 /* -------------------------------------------------------------------------- */
-
 function BoundaryNudge({
   which,
   active,

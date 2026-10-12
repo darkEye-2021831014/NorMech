@@ -3,6 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { LogOut } from 'lucide-react';
+import { Logo } from '@/components/Logo';
+import { siteName } from '@/config/brand';
 import { useToast } from '@/components/ui/Toast';
 
 interface Props {
@@ -35,8 +37,12 @@ export function AnnotatorChrome({ name, accessKey, annotated, total }: Props) {
     <header className="border-b border-ink/15 relative z-10">
       <div className="max-w-[1280px] mx-auto px-6 md:px-10 py-3 flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-          <span className="catalogue">M.A.</span>
-          <span className="hidden sm:inline-block w-12 h-px bg-ink/30" aria-hidden />
+          <Logo size={20} className="text-ink shrink-0" />
+          <span className="hidden sm:inline-block w-10 h-px bg-ink/30" aria-hidden />
+          <span className="font-display text-[15px] leading-none tracking-tightish text-ink truncate">
+            {siteName}
+          </span>
+          <span className="hidden sm:inline-block w-3 h-px bg-ink/20" aria-hidden />
           <span className="catalogue text-vermilion dark:text-vermilionBright">— Annotator</span>
         </div>
         <div className="flex items-center gap-3 sm:gap-5 min-w-0">

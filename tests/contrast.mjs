@@ -65,8 +65,11 @@ function hex([r, g, b]) {
  * "normal" | "large"]. Tokens reference keys of TOKENS.{theme}.
  */
 const PAIRS = [
-  // Landing page — top-bar catalogue label and headline.
-  ['Top-bar catalogue (M.A. — Vol. I)', 'inkMuted', 'paper', 'normal'],
+  // Top-bar — small mono inkMuted on paper. This is the generic
+  // "small mono caption" used throughout the chrome (the old
+  // "M.A. — Vol. I" mark, replaced with "— Annotator" /
+  // "— Administrator", shares the same colours).
+  ['Top-bar small mono caption', 'inkMuted', 'paper', 'normal'],
 
   // Landing page — headline.
   ['Headline "A reading room"',         'ink',       'paper', 'large'],
@@ -125,6 +128,39 @@ const PAIRS = [
   ['Login kicker (accent)',             'accent',    'paper', 'normal'],
   ['Login h1 italic span',              'ink',       'paper', 'large'],
   ['Login body text',                   'inkMuted',  'paper', 'normal'],
+
+  // Landing page — Marginalia wordmark in the top bar.
+  ['Top-bar wordmark "Marginalia"',     'ink',       'paper', 'large'],
+  // Landing page — small mono tagline in the top bar (right side,
+  // hidden below 640px).
+  ['Top-bar tagline (mono)',            'inkMuted',  'paper', 'normal'],
+  // Landing page — primary card's filled state (vermilion bg with
+  // paperStrong text + paperStrong ring color).
+  ['Primary card filled (border+caption+title+desc)', 'paperStrong', 'vermilion', 'normal'],
+  // Landing page — secondary card's hover state (ink bg with
+  // paper text + accent ring color).
+  ['Secondary card (hover): ring + text', 'paper',  'ink',    'normal'],
+  // Landing page — 3-step strip text under the cards.
+  ['3-step strip text',                 'inkMuted',  'paper', 'normal'],
+  // Landing page — footer line.
+  ['Footer "Marginalia · for research use"', 'inkMuted', 'paper', 'normal'],
+  // Landing page — page kicker (under the top bar).
+  ['Page kicker (under top bar)',       'accent',    'paper', 'normal'],
+  // Chrome / annotator — the new "Marginalia" wordmark text.
+  ['Chrome wordmark "Marginalia"',      'ink',       'paper', 'large'],
+  // Progress map — summary line text.
+  ['Progress map summary (numbers)',    'ink',       'paper', 'normal'],
+  ['Progress map summary (skipped)',    'accent',    'paper', 'normal'],
+  // Progress map — legend.
+  ['Progress map legend',               'inkMuted',  'paper', 'normal'],
+  // Progress map — marked (vermilion) tile label.
+  ['Progress tile marked (vermilion)',  'paperStrong', 'vermilion', 'normal'],
+  // Progress map — marked (olive) tile label.
+  ['Progress tile marked (olive)',      'paperStrong', 'oliveA',    'normal'],
+  // Progress map — skipped tile ("!" mark on paper bg).
+  ['Progress tile skipped "!"',         'accent',    'paper', 'normal'],
+  // Progress map — pending tile (number on paper bg).
+  ['Progress tile pending (number)',    'inkMuted',  'paper', 'normal'],
 ];
 
 function resolve(token, theme, kind) {

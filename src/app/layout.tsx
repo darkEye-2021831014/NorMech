@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Fraunces, IBM_Plex_Sans, IBM_Plex_Mono } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
+import { siteName, tagline, shortTagline } from '@/config/brand';
 
 const fraunces = Fraunces({
   subsets: ['latin'],
@@ -32,8 +33,8 @@ const siteUrl = (() => {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f5f1e8' },
-    { media: '(prefers-color-scheme: dark)', color: '#15130f' },
+    { media: '(prefers-color-scheme: light)', color: '#f4efe6' },
+    { media: '(prefers-color-scheme: dark)', color: '#14120f' },
   ],
   width: 'device-width',
   initialScale: 1,
@@ -43,51 +44,50 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "Meme Annotator — Archivist's Notebook",
-    template: '%s · Meme Annotator',
+    default: siteName,
+    template: `%s · ${siteName}`,
   },
-  description:
-    'A scholarly instrument for the slow, attentive annotation of meme imagery. Mark each leaf with a single question: where does the harm live?',
-  applicationName: 'Meme Annotator',
+  description: `${siteName} — ${tagline.toLowerCase()}. ${shortTagline}.`,
+  applicationName: siteName,
   keywords: [
+    'image annotation',
     'meme annotation',
-    'image labeling',
-    'content moderation',
-    'harm classification',
     'research instrument',
+    'content classification',
+    'human labeling',
   ],
-  authors: [{ name: 'The Archivist' }],
-  creator: 'The Archivist',
+  authors: [{ name: siteName }],
+  creator: siteName,
+  // `?v=2` busts any browser-cached favicon.ico from the old
+  // "Meme Annotator" mark.
   icons: {
     icon: [
-      { url: '/favicon.ico', type: 'image/x-icon' },
-      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico?v=2', type: 'image/x-icon' },
+      { url: '/icon.svg?v=2', type: 'image/svg+xml' },
     ],
-    apple: '/apple-touch-icon.png',
+    apple: '/apple-icon.png?v=2',
   },
   manifest: '/site.webmanifest',
   openGraph: {
     type: 'website',
     locale: 'en_US',
     url: siteUrl,
-    siteName: 'Meme Annotator',
-    title: "Meme Annotator — Archivist's Notebook",
-    description:
-      'A reading room for the picture that travels. Slow, attentive annotation of meme imagery.',
+    siteName,
+    title: siteName,
+    description: `${tagline}. ${shortTagline}.`,
     images: [
       {
         url: '/opengraph-image.svg',
         width: 1200,
         height: 630,
-        alt: "Meme Annotator — A reading room for the picture that travels",
+        alt: `${siteName} — ${tagline}`,
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: "Meme Annotator — Archivist's Notebook",
-    description:
-      'A reading room for the picture that travels. Slow, attentive annotation of meme imagery.',
+    title: siteName,
+    description: `${tagline}. ${shortTagline}.`,
     images: ['/opengraph-image.svg'],
   },
   robots: {
