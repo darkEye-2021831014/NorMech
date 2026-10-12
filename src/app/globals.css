@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Light: warm paper off-white */
+  --paper: 244 239 230;        /* #F4EFE6 */
+  --ink: 20 18 15;              /* #14120F */
+  --ink-soft: 45 41 36;
+  --ink-muted: 110 100 88;
+  --vermilion: 217 67 43;       /* #D9432B */
+  --vermilion-soft: 232 110 88;
+  --olive: 124 130 80;          /* muted olive secondary */
+  --rule: 20 18 15;             /* 1px ink border color */
+  --card-bg: 250 246 238;       /* slightly lighter paper */
+}
+
+.dark {
+  /* Dark ink theme */
+  --paper: 20 18 15;
+  --ink: 244 239 230;
+  --ink-soft: 220 213 198;
+  --ink-muted: 150 142 124;
+  --vermilion: 217 67 43;
+  --vermilion-soft: 232 110 88;
+  --olive: 160 165 110;
+  --rule: 244 239 230;
+  --card-bg: 28 25 21;
+}
+
+* {
+  border-color: rgb(var(--rule) / 0.18);
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-color: rgb(var(--paper));
+  color: rgb(var(--ink));
+  font-family: var(--font-plex-sans), system-ui, sans-serif;
+  font-feature-settings: 'ss01', 'cv11';
+  position: relative;
+  min-height: 100vh;
+}
+
+/* Paper grain overlay — tiny SVG noise */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.35;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.10 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
+.dark body::before {
+  mix-blend-mode: screen;
+  opacity: 0.18;
+}
+
+/* Focus ring — visible, not invisible */
+:focus-visible {
+  outline: 2px solid rgb(var(--vermilion));
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Min touch targets */
+button, a, input, select, textarea, [role="button"] {
+  min-height: 0;
+}
+
+button.btn-touch, a.btn-touch {
+  min-height: 44px;
+}
+
+/* Selection */
+::selection {
+  background: rgb(var(--vermilion) / 0.22);
+  color: rgb(var(--ink));
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Editorial hairline */
+.hairline {
+  border-color: rgb(var(--ink) / 0.18);
+}
+.hairline-strong {
+  border-color: rgb(var(--ink) / 0.4);
+}
+
+.ink-underline {
+  background-image: linear-gradient(transparent calc(100% - 1px), rgb(var(--ink) / 0.5) calc(100% - 1px));
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+/* Manuscript number — used for catalogue numbers */
+.catalogue {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-feature-settings: 'tnum', 'zero';
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: rgb(var(--ink-muted));
+}

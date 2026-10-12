@@ -1,0 +1,78 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: meme-annotator-web
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    environment:
+      - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true
+    volumes:
+      # Source code (live-mounted for hot reload).
+      - .:/app
+      # Named volumes so node_modules and the .next build cache
+      # survive `docker compose down` and image rebuilds. Anonymous
+      # volumes were getting wiped, causing every restart to `npm install`
+      # ~600 packages from scratch.
+      - node_modules:/app/node_modules
+      - next_cache:/app/.next
+    command: npm run dev
+    restart: unless-stopped
+
+  # Production profile — `docker compose --profile prod up web-prod`.
+  # Uses the optimized build (`next build && next start`) instead of
+  # dev mode. Significantly faster cold start and runtime.
+  web-prod:
+    profiles: ["prod"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: meme-annotator-web-prod
+    ports:
+      - "3001:3000"
+    env_file:
+      - .env.local
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+      - next_cache:/app/.next
+    command: sh -c "npm run build && npm run start"
+    restart: unless-stopped
+
+  # E2E test runner. Uses the official Playwright image so the host
+  # does not need any browser binaries. Targets the `web` service
+  # by name. To run:
+  #   docker compose up web -d       # start the dev server
+  #   docker compose run --rm e2e    # run the suite (waits for web)
+  # The runner:
+  #   1. Installs the Supabase client into tests/ (cached after first run).
+  #   2. Waits for the dev server to be reachable.
+  #   3. Seeds a test dataset in Supabase.
+  #   4. Runs the Playwright suite.
+  # Test artifacts land in ./playwright-report and ./test-results.
+  e2e:
+    image: mcr.microsoft.com/playwright:v1.55.0-jammy
+    container_name: meme-annotator-e2e
+    depends_on:
+      - web
+    working_dir: /e2e
+    env_file:
+      - .env.local
+    environment:
+      - E2E_BASE_URL=http://web:3000
+    volumes:
+      # Source so the test files and seed script are visible.
+      - .:/e2e
+      - e2e_node_modules:/e2e/node_modules
+    command: ["sh", "tests/e2e-run.sh"]
+
+volumes:
+  node_modules:
+  next_cache:
+  e2e_node_modules:

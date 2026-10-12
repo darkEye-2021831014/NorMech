@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <!-- paper background -->
+  <rect width="1200" height="630" fill="#f5f1e8"/>
+  <!-- hairline frame -->
+  <rect x="40" y="40" width="1120" height="550" fill="none" stroke="#1a1a1a" stroke-width="1" opacity="0.25"/>
+  <line x1="40" y1="100" x2="1160" y2="100" stroke="#1a1a1a" stroke-width="1" opacity="0.25"/>
+  <line x1="40" y1="530" x2="1160" y2="530" stroke="#1a1a1a" stroke-width="1" opacity="0.25"/>
+
+  <!-- top catalogue row -->
+  <text x="80" y="78" font-family="ui-monospace, monospace" font-size="14" letter-spacing="2" fill="#1a1a1a" opacity="0.7">No. 001 · M.A. — Vol. I</text>
+  <text x="1120" y="78" text-anchor="end" font-family="ui-monospace, monospace" font-size="14" letter-spacing="2" fill="#1a1a1a" opacity="0.7">an archivist's instrument</text>
+
+  <!-- main title block -->
+  <text x="600" y="270" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="84" font-weight="600" fill="#1a1a1a">A reading room</text>
+  <text x="600" y="370" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="84" font-style="italic" fill="#1a1a1a" opacity="0.85">for the <tspan fill="#a33b1f" font-style="normal" font-weight="600">picture</tspan> that travels.</text>
+
+  <!-- subtitle -->
+  <text x="600" y="450" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="24" fill="#1a1a1a" opacity="0.7">The Meme Annotator</text>
+
+  <!-- bottom row -->
+  <text x="80" y="558" font-family="ui-monospace, monospace" font-size="13" letter-spacing="1.5" fill="#1a1a1a" opacity="0.6">close annotation · single observer · non-persistent</text>
+  <text x="1120" y="558" text-anchor="end" font-family="ui-monospace, monospace" font-size="13" letter-spacing="1.5" fill="#1a1a1a" opacity="0.6">MMXXVI</text>
+
+  <!-- center dot mark -->
+  <circle cx="600" cy="200" r="4" fill="#a33b1f"/>
+</svg>
