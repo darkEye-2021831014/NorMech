@@ -68,6 +68,84 @@ Anonymous volumes were getting wiped, causing every restart to `npm install`
 
 ---
 
+## Deploying to Vercel
+
+The app is Vercel-ready out of the box — `next.config.js` has no
+`output: 'standalone'`, no Edge runtime, and no hardcoded localhost
+in client code, so a straight Vercel import with the env vars below
+will build and serve.
+
+### One-time setup
+
+1. **Push to GitHub** (the remote is already wired to
+   `github.com/darkEye-2021831014/NorMech`):
+
+   ```bash
+   git push origin main
+   ```
+
+2. **Import in Vercel**: Dashboard → **Add New → Project → Import**
+   the `darkEye-2021831014/NorMech` repo. Vercel auto-detects
+   Next.js 14. Don't change the build command, output directory, or
+   install command.
+
+3. **Set the environment variables** before clicking **Deploy**
+   (Project → Settings → Environment Variables, one per row):
+
+   | Variable                    | Required | Where to get it |
+   |-----------------------------|----------|-----------------|
+   | `SUPABASE_URL`              | yes      | Supabase → Project Settings → API |
+   | `SUPABASE_SERVICE_ROLE_KEY` | yes      | Supabase → Project Settings → API (long JWT starting with `eyJ…`) |
+   | `ADMIN_PASSWORD`            | yes      | Any strong string you'll type into the admin login form |
+   | `SESSION_SECRET`            | yes      | 32+ random chars — e.g. `openssl rand -base64 48` or `node -e "console.log(crypto.randomBytes(48).toString('base64url'))"` |
+   | `NEXT_PUBLIC_SITE_URL`      | optional | Leave blank for the first deploy, set to `https://<your-app>.vercel.app` afterwards, then redeploy |
+
+   Scope each variable to **Production** (and **Preview** too if you
+   want preview deploys to work).
+
+4. **Click Deploy.** First build takes ~2–3 minutes. Vercel prints
+   the production URL on success.
+
+5. **Set the public URL** (one-time): after the first deploy,
+   edit `NEXT_PUBLIC_SITE_URL` to the real URL and trigger
+   **Redeploy** so the OpenGraph `metadataBase` is correct.
+
+6. **Smoke test**: open the URL, log in to `/admin` and to
+   `/annotate`, mark one image, confirm "Saved." appears, then:
+
+   ```bash
+   curl https://<your-app>.vercel.app/api/health
+   ```
+
+   Expect `200 {"ok":true,"db":"ok","latencyMs":<100,"version":"0.1.0"}`
+   in under a second.
+
+### UptimeRobot keepalive (recommended)
+
+Supabase pauses free-tier projects after ~7 days of **database**
+inactivity — Vercel HTTP traffic alone doesn't count, only real
+Postgres queries. The app exposes `/api/health`, which runs a cheap
+`head: true` count against the `datasets` table on every request.
+Point a free UptimeRobot HTTPS monitor at it (5-minute minimum
+interval) and you're done.
+
+- **Monitor type:** HTTPS
+- **URL:** `https://<your-app>.vercel.app/api/health`
+- **Interval:** 5 minutes (free-tier minimum)
+- **Alert on:** non-200 response (the route returns 503 with
+  `{ok:false, db:"error"|"unreachable", message:…}` on failure)
+
+### Redeploying
+
+- **Code change** → `git push origin main`. Vercel auto-builds a
+  new Production deployment for every push to `main`.
+- **Env-var change only** → Project → Settings → Environment
+  Variables → edit the var → Deployments → ⋮ → **Redeploy** (you
+  can keep "Use existing Build Cache" checked; env vars are read at
+  runtime, not at build time).
+
+---
+
 ## Architecture
 
 ```
@@ -146,8 +224,9 @@ admin and user roles can load images, e.g. for a future curator preview).
 ## Environment variables
 
 All variables live in `.env.local` (or your hosting provider's secret
-manager). None of them are exposed to the client — there is no
-`NEXT_PUBLIC_` prefix on anything.
+manager). Four are server-only. `NEXT_PUBLIC_SITE_URL` is the only
+one with the `NEXT_PUBLIC_` prefix, and it is read only on the
+server in the root layout (used for OpenGraph `metadataBase`).
 
 | Variable                     | Required | Purpose |
 |------------------------------|----------|---------|
